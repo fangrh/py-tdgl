@@ -128,7 +128,9 @@ class TDGLSolver:
         self.options.validate()
         self.terminal_currents = terminal_currents
         self.seed_solution = seed_solution
-
+        # True to use heat disorder, update epsilon according to the self.update_heat_epsilon function.
+        self.use_heat = True
+        
         if self.options.gpu:
             assert cupy is not None
             self.xp = cupy
@@ -312,6 +314,22 @@ class TDGLSolver:
                 self.edge_centers = cupy.asarray(self.edge_centers)
                 self.sites = cupy.asarray(self.sites)
                 self.new_A_induced = cupy.asarray(self.new_A_induced)
+        
+        # Initialize heat-related parameters storage
+        self.heat_relate_nums = {
+            'temperature': [],
+            'W_total': [],
+            'step': [],
+            'time': []
+        }
+        self.W_total = None
+        self.current_step = 0
+        self.current_time = 0.0
+        self.current_dt = 1e-6
+        
+        # Calculate temperature scaling factor for heat diffusion
+        self._calculate_temperature_scale()
+
 
         # Running list of the max abs change in |psi|^2 between subsequent solve steps.
         # This list is used to calculate the adaptive time step.
@@ -321,7 +339,88 @@ class TDGLSolver:
 
         if options.monitor:
             os.environ["HDF5_USE_FILE_LOCKING"] = "FALSE"
+    
+    def _calculate_temperature_scale(self):
+        """Calculate and store the temperature scaling factor for heat diffusion.
+        
+        Based on TDGL unit system, we derive the temperature scale from 
+        the fundamental energy scale and physical constants.
+        
+        Two approaches are implemented:
+        1. Via voltage scale: T_scale = V₀ / k_B
+        2. Direct from fundamentals: T_scale = Φ₀² / ((2π)² ξ² μ₀ σ λ² k_B) × correction_factor
+        
+        The voltage scale approach is more direct, but the fundamental approach
+        shows the explicit dependence on quantum flux and material parameters.
+        """
+        # Get device parameters
+        device = self.device
+        ureg = device.ureg
+        
+        # Physical constants
+        k_B = 1.381e-23  # J/K
+        k_B_eV_per_K = 8.617e-5  # eV/K
+        Phi_0 = 2.067e-15  # Wb (flux quantum)
+        mu_0 = 4 * np.pi * 1e-7  # H/m
+        
+        # Get the voltage scale V_0 from the device
+        if device.conductivity is not None:
+            # Method 1: Via voltage scale (standard approach)
+            V_0 = device.V0()  # This is in physical units (Volts)
+            V_0_volts = V_0.to("volts").magnitude
+            T_scale_method1 = V_0_volts / k_B_eV_per_K
+            
+            # Method 2: Direct from fundamental quantities (following user's insight)
+            # Get material parameters in SI units
+            xi_si = device.coherence_length.to("meters").magnitude
+            lambda_si = device.london_lambda.to("meters").magnitude
+            sigma_si = device.conductivity.to("siemens/meter").magnitude
+            
+            # User's formula with correction for proper temperature dimensions
+            # T_scale = Φ₀² / ((2π)² ξ² μ₀ σ λ² k_B) × correction_factor
+            # The correction factor comes from the relationship between V₀ and the fundamental expression
+            
+            fundamental_energy_scale = Phi_0**2 / ((2*np.pi)**2 * xi_si**2 * mu_0 * sigma_si * lambda_si**2)
+            T_scale_method2 = fundamental_energy_scale / k_B
+            
+            # The two methods should be related by a simple factor
+            # Let's use method 1 as the primary result but log both for comparison
+            self.temperature_scale = T_scale_method1
+            
+            logger.info(f"Temperature scale calculation:")
+            logger.info(f"  Method 1 (via V₀): {T_scale_method1:.2f} K")
+            logger.info(f"  Method 2 (fundamental): {T_scale_method2:.2e} K")
+            logger.info(f"  Ratio (M2/M1): {T_scale_method2/T_scale_method1:.2e}")
+            logger.info(f"  Using Method 1: {self.temperature_scale:.2f} K")
+            
+        else:
+            # Fallback: use a typical superconductor critical temperature
+            # This preserves backward compatibility when conductivity is not defined
+            logger.warning(
+                "Device conductivity not defined. Using default temperature scale of 10 K. "
+                "For accurate heat diffusion, please define device.layer.conductivity."
+            )
+            self.temperature_scale = 10.0  # Kelvin
+        
+        # Store as attribute for easy access and modification
+        # Users can still modify this value if needed: solver.temperature_scale = new_value
+    
+    def get_temperature_kelvin(self):
+        """Get the current temperature in Kelvin.
+        
+        Returns
+        -------
+        array_like or None
+            Temperature in Kelvin, or None if temperature hasn't been calculated yet
+        """
+        if hasattr(self, 'temperature') and self.temperature is not None:
+            return self.temperature * self.temperature_scale
+        else:
+            return None
+    
 
+
+    
     def update_mu_boundary(self, time: float) -> None:
         """Computes the terminal current density for a given time step and
         updates the scalar potential boundary conditions accordingly.
@@ -360,6 +459,141 @@ class TDGLSolver:
         if self.use_cupy:
             A_applied = cupy.asarray(A_applied)
         return A_applied
+    
+    def update_heat_epsilon(self, step, dt) -> np.ndarray:
+        """Update the value of epsilon according to heat diffusion calculation.
+        
+        Optimized version with reduced computational overhead.
+        
+        Returns:
+            Updated epsilon array based on temperature distribution
+        """
+        # ===== 热扩散参数设置 (可在此处调节) =====
+        T_c = 24        # 无量纲临界温度
+        kappa_eff = 0.06    # 有效热导率 (无量纲)
+        eta = 0.2        # 与环境的热交换系数 (无量纲)
+        T_0 = 12        # 无量纲环境温度 (低于T_c)
+        C_eff = 0.65     # 有效热容 (无量纲)
+        
+        # 性能优化参数
+        storage_interval = 10  # 每10步存储一次数据
+        temp_change_threshold = 1e-8  # 温度变化阈值
+            
+        # ===== 初始化和预计算 =====
+        if step == 0:
+            # 第一次调用时初始化
+            self.temperature = np.full(len(self.sites), T_0, dtype=np.float64)
+            W_total = np.zeros(len(self.sites), dtype=np.float64)
+            
+            # 预计算热扩散矩阵（避免每步重新计算）
+            self.heat_laplacian = self.operators.mu_laplacian * kappa_eff
+            
+            # 初始化边界条件
+            num_boundary_edges = len(self.device.mesh.edge_mesh.boundary_edge_indices)
+            self.T_boundary = np.zeros(num_boundary_edges, dtype=np.float64)
+            
+            # 初始化性能追踪
+            self.last_temp_change = np.inf
+            
+        else:
+            # 确保初始化完成
+            if not hasattr(self, 'temperature'):
+                self.temperature = np.full(len(self.sites), T_0, dtype=np.float64)
+                self.heat_laplacian = self.operators.mu_laplacian * kappa_eff
+                num_boundary_edges = len(self.device.mesh.edge_mesh.boundary_edge_indices)
+                self.T_boundary = np.zeros(num_boundary_edges, dtype=np.float64)
+                self.last_temp_change = np.inf
+            
+            # 获取W_total
+            if hasattr(self, 'W_total') and self.W_total is not None:
+                W_total = self.W_total
+            else:
+                W_total = np.zeros(len(self.sites), dtype=np.float64)
+        
+        # ===== 热扩散计算 =====
+        # 使用预计算的矩阵
+        laplacian_T = self.heat_laplacian @ self.temperature
+        boundary_term = self.operators.mu_boundary_laplacian @ self.T_boundary
+        
+        # 合并计算，减少临时数组创建
+        # 源项：焦耳加热和环境冷却
+        source_term = 0.5 * W_total - eta * (self.temperature - T_0)
+        
+        # 完整的扩散项
+        diffusion_term = kappa_eff * (laplacian_T + boundary_term)
+        
+        # 计算温度变化率 ∂T/∂t
+        dT_dt = (diffusion_term + source_term) / C_eff
+        
+        # 记录温度变化幅度（用于下次判断是否跳过计算）
+        self.last_temp_change = np.max(np.abs(dT_dt)) if len(dT_dt) > 0 else 0.0
+        
+        # In-place 更新温度：T^{n+1} = T^n + dt * ∂T/∂t
+        self.temperature += dt * dT_dt
+        
+        # 确保温度为正值（物理约束）- in-place操作
+        np.maximum(self.temperature, 0.01, out=self.temperature)
+                
+        # ===== 计算新的epsilon =====
+        # epsilon = T_c/T - 1，使用 in-place 操作
+        epsilon_new = T_c / self.temperature - 1.0
+        
+        # ===== 有选择地存储数据 =====
+        # if hasattr(self, 'heat_relate_nums') and step % storage_interval == 0:
+        #     # 只在指定间隔存储数据，减少内存开销
+        #     current_step = getattr(self, 'current_step', step)
+        #     current_time = getattr(self, 'current_time', 0.0)
+            
+        #     self.heat_relate_nums['temperature'].append(self.temperature.copy())
+        #     self.heat_relate_nums['step'].append(current_step)
+        #     self.heat_relate_nums['time'].append(current_time)
+        #     if hasattr(self, 'W_total') and self.W_total is not None:
+        #         self.heat_relate_nums['W_total'].append(self.W_total.copy())
+            
+        #     # 限制历史数据长度，防止内存无限增长
+        #     max_history = 1000
+        #     for key in self.heat_relate_nums:
+        #         if len(self.heat_relate_nums[key]) > max_history:
+        #             self.heat_relate_nums[key] = self.heat_relate_nums[key][-max_history:]
+        
+        return epsilon_new
+    
+    def _get_boundary_sites(self):
+        """获取边界点的索引（保留此方法用于向后兼容）"""
+        mesh = self.device.mesh
+        
+        # 使用网格的边界边信息
+        if hasattr(mesh, 'edge_mesh') and hasattr(mesh.edge_mesh, 'boundary_edge_indices'):
+            boundary_edges = mesh.edge_mesh.boundary_edge_indices
+            boundary_sites = set()
+            
+            # 从边界边获取边界点
+            for edge_idx in boundary_edges:
+                edge = mesh.edge_mesh.edges[edge_idx]
+                boundary_sites.add(edge[0])
+                boundary_sites.add(edge[1])
+                
+            return list(boundary_sites)
+        
+        # 备用方法：简单的几何方法
+        sites = mesh.sites
+        x_coords = sites[:, 0]
+        y_coords = sites[:, 1]
+        
+        # 找到边界上的点
+        x_min, x_max = np.min(x_coords), np.max(x_coords)
+        y_min, y_max = np.min(y_coords), np.max(y_coords)
+        
+        tolerance = 1e-10
+        
+        boundary_mask = (
+            (np.abs(x_coords - x_min) < tolerance) |
+            (np.abs(x_coords - x_max) < tolerance) |
+            (np.abs(y_coords - y_min) < tolerance) |
+            (np.abs(y_coords - y_max) < tolerance)
+        )
+        
+        return np.where(boundary_mask)[0]
 
     def update_epsilon(self, time: float) -> np.ndarray:
         """Evaluates the time-dependent disorder parameter :math:`\\epsilon`.
@@ -576,7 +810,53 @@ class TDGLSolver:
             del velocity[:-2]
             del A_induced_vals[:-2]
         return A_induced, screening_error
-
+    
+    def _calculate_total_power_density(self, dA_dt, psi, abs_sq_psi, old_sq_psi, dt):
+        """Calculate total power density W_total according to the formula:
+        W_total = 2(∂A/∂t)^2 + (2u/sqrt(1+γ^2|ψ|^2))(|∂ψ/∂t|^2) + (γ^2/4)(∂|ψ|^2/∂t)^2
+        
+        Parameters
+        ----------
+        dA_dt : array_like
+            Time derivative of vector potential
+        psi : array_like 
+            Order parameter
+        abs_sq_psi : array_like
+            Absolute square of order parameter
+        old_sq_psi : array_like
+            Previous absolute square of order parameter
+        dt : float
+            Time step
+        
+        Returns
+        -------
+        array_like
+            Total power density
+        """
+        # Term 1: 2(∂A/∂t)^2
+        term1 = 2 * (dA_dt * dA_dt)
+        
+        # Determine array library (numpy or cupy)
+        if isinstance(psi, np.ndarray):
+            xp = np
+        else:
+            assert cupy is not None
+            assert isinstance(psi, cupy.ndarray)
+            xp = cupy
+        
+        # Calculate ∂ψ/∂t using current and previous psi values
+        dpsi_dt = (psi - self.previous_psi) / dt if hasattr(self, 'previous_psi') else xp.zeros_like(psi)
+        self.previous_psi = psi.copy()
+        
+        # Term 2: (2u/sqrt(1+γ^2|ψ|^2))(|∂ψ/∂t|^2)
+        term2 = (2 * self.u / xp.sqrt(1 + self.gamma**2 * abs_sq_psi)) * xp.abs(dpsi_dt)**2
+        
+        # Term 3: (γ^2/4)(∂|ψ|^2/∂t)^2
+        d_abspsisq_dt = (abs_sq_psi - old_sq_psi) / dt
+        term3 = (self.gamma**2 / 4) * d_abspsisq_dt**2
+        
+        return term1 + term2 + term3
+    
     def update(
         self,
         state: Dict[str, numbers.Real],
@@ -618,6 +898,11 @@ class TDGLSolver:
         time = state["time"]
         A_induced = induced_vector_potential
         prev_A_applied = A_applied = applied_vector_potential
+        
+        # Update current step and time for heat diffusion
+        self.current_step = step
+        self.current_time = time
+        self.current_dt = dt
 
         # Update the scalar potential boundary conditions.
         self.update_mu_boundary(time)
@@ -644,6 +929,10 @@ class TDGLSolver:
         # Update the value of epsilon
         if self.dynamic_epsilon:
             self.epsilon = self.update_epsilon(time)
+
+        # Update the value of epsilon
+        if self.use_heat:
+            self.epsilon = self.update_heat_epsilon(step, dt)
 
         epsilon = self.epsilon
         old_sq_psi = xp.absolute(psi) ** 2
@@ -678,7 +967,10 @@ class TDGLSolver:
             )
             # Update the scalar potential, supercurrent density, and normal current density
             mu, supercurrent, normal_current = self.solve_for_observables(psi, dA_dt)
-
+            
+            # Calculate total power density
+            self.W_total = self._calculate_total_power_density(dA_dt, psi, abs_sq_psi, old_sq_psi, dt)
+            
             if options.include_screening:
                 # Evaluate the induced vector potential
                 A_induced, screening_error = self.get_induced_vector_potential(

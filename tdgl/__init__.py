@@ -21,3 +21,5 @@ from .solver.solve import solve
 from .solver.solver import SolverResult, TDGLSolver
 from .version import __git_revision__, __version__
 from .visualization.common import non_gui_backend
+
+print("tdgl imported from the fock version")
