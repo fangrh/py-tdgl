@@ -13,6 +13,12 @@ def solve(
     terminal_currents: Union[Callable, Dict[str, float], None] = None,
     disorder_epsilon: Union[float, Callable] = 1,
     seed_solution: Optional[Solution] = None,
+    use_heat: bool = False,
+    T_0: float = 1,            # 无量纲临界温度
+    kappa_eff: float = 0.06,    # 有效热导率 (无量纲)
+    eta: float = 5.0,           # 与环境的热交换系数 (无量纲)
+    C_eff: float = 0.65,        # 有效热容 (无量纲)
+    T_heat: float = 1/2
 ) -> Union[Solution, None]:
     """Solve a TDGL model.
 
@@ -48,5 +54,11 @@ def solve(
         terminal_currents=terminal_currents,
         disorder_epsilon=disorder_epsilon,
         seed_solution=seed_solution,
+        use_heat=use_heat,
+        T_0=T_0,
+        kappa_eff=kappa_eff,
+        eta=eta,
+        C_eff=C_eff,
+        T_heat=T_heat
     )
     return solver.solve()

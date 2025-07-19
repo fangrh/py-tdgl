@@ -115,6 +115,35 @@ class Solution:
         self._solve_step = _solve_step
         self.load_tdgl_data(self._solve_step)
         self._version_info = version_dict()
+        
+        # Heat-related parameters
+        self.heat_parameters: Union[Dict[str, Any], None] = None
+        """Heat diffusion parameters used in the simulation."""
+        self._load_heat_parameters()
+    
+    @property
+    def use_heat(self) -> bool:
+        """Returns True if heat diffusion was enabled in the simulation."""
+        return self.heat_parameters is not None and self.heat_parameters.get("use_heat", False)
+    
+    def _load_heat_parameters(self) -> None:
+        """Load heat-related parameters from the HDF5 file."""
+        try:
+            with h5py.File(self.path, "r") as f:
+                if "solution/heat_parameters" in f:
+                    heat_group = f["solution/heat_parameters"]
+                    self.heat_parameters = {
+                        "use_heat": heat_group.attrs["use_heat"],
+                        "T_0": heat_group.attrs["T_0"],
+                        "kappa_eff": heat_group.attrs["kappa_eff"],
+                        "eta": heat_group.attrs["eta"],
+                        "C_eff": heat_group.attrs["C_eff"],
+                        "T_heat": heat_group.attrs["T_heat"],
+                    }
+                else:
+                    self.heat_parameters = None
+        except Exception:
+            self.heat_parameters = None
 
     @property
     def saved_on_disk(self) -> bool:
@@ -927,6 +956,12 @@ class Solution:
                 "disorder_epsilon",
                 group,
             )
+            
+            # Save heat parameters if they exist
+            if self.heat_parameters is not None:
+                heat_group = group.create_group("heat_parameters")
+                for key, value in self.heat_parameters.items():
+                    heat_group.attrs[key] = value
             group.attrs["total_seconds"] = self.total_seconds
             self.device.to_hdf5(group.create_group("device"), save_mesh=save_mesh)
 

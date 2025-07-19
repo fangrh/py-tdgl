@@ -80,6 +80,7 @@ class TDGLData:
         supercurrent: The supercurrent density at each edge in the mesh.
         normal_current: The normal density at each edge in the mesh.
         state: The solver state for the current iteration.
+        W_total: The total power density at each site in the mesh (heat-related).
     """
 
     step: int
@@ -91,6 +92,7 @@ class TDGLData:
     supercurrent: np.ndarray
     normal_current: np.ndarray
     state: Dict[str, Any]
+    W_total: Union[np.ndarray, None] = None
 
     @staticmethod
     def from_hdf5(h5file: Union[h5py.File, h5py.Group], step: int) -> "TDGLData":
@@ -136,7 +138,7 @@ class TDGLData:
                 continue
             if key in ["state"]:
                 group.attrs.update(value)
-            else:
+            elif value is not None:  # Only save non-None values
                 group[key] = value
 
     def __eq__(self, other: Any) -> bool:
@@ -156,6 +158,7 @@ class DynamicsData:
         theta: The phase of the order parameter, :math:`\\theta=\\arg\\psi`
         screening_iterations: The number of screening iterations performed at each
             time step.
+        W_total: The total power density at probe points over time (heat-related).
     """
 
     dt: np.ndarray
@@ -163,6 +166,7 @@ class DynamicsData:
     mu: Union[np.ndarray, None] = None
     theta: Union[np.ndarray, None] = None
     screening_iterations: Union[np.ndarray, None] = None
+    W_total: Union[np.ndarray, None] = None
 
     def __post_init__(self):
         self.time = np.cumsum(self.dt)
@@ -397,6 +401,7 @@ class DynamicsData:
             mus = []
             thetas = []
             screening_iterations = []
+            W_totals = []
             if step_min is None:
                 step_min, step_max = get_data_range(h5file)
             for i in range(step_min, step_max + 1):
@@ -411,21 +416,26 @@ class DynamicsData:
                     thetas.append(np.array(grp["theta"]))
                 if "screening_iterations" in grp:
                     screening_iterations.append(np.array(grp["screening_iterations"]))
+                if "W_total" in grp:
+                    W_totals.append(np.array(grp["W_total"]))
             dt = np.concatenate(dts)
             mask = dt > 0
             dt = dt[mask]
-            mu = theta = iterations = None
+            mu = theta = iterations = W_total = None
             if mus:
                 mu = np.concatenate(mus, axis=1)[..., mask]
             if thetas:
                 theta = np.concatenate(thetas, axis=1)[..., mask]
             if screening_iterations:
                 iterations = np.concatenate(screening_iterations)[mask]
+            if W_totals:
+                W_total = np.concatenate(W_totals, axis=1)[..., mask]
         return DynamicsData(
             dt,
             mu=mu,
             theta=theta,
             screening_iterations=iterations,
+            W_total=W_total,
         )
 
     def to_hdf5(self, h5group: h5py.Group) -> None:
@@ -441,6 +451,8 @@ class DynamicsData:
             h5group["theta"] = self.theta
         if self.screening_iterations is not None:
             h5group["screening_iterations"] = self.screening_iterations
+        if self.W_total is not None:
+            h5group["W_total"] = self.W_total
 
     @staticmethod
     def from_solution(

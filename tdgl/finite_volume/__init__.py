@@ -1,6 +1,7 @@
 from .edge_mesh import EdgeMesh
 from .mesh import Mesh
 from .operators import MeshOperators
+from .operators import *
 from .util import (
     compute_voronoi_polygon_areas,
     generate_voronoi_vertices,

@@ -73,6 +73,7 @@ class SolverResult(NamedTuple):
         a time-independent vector potential.
     epsilon: The disorder parameter, ``epsilon``. This will be ``None`` in the case of
         a time-independent ``epsilon``.
+    W_total: The total power density. This will be ``None`` if heat is not enabled.
     """
 
     dt: float
@@ -83,6 +84,7 @@ class SolverResult(NamedTuple):
     A_induced: np.ndarray
     A_applied: Optional[np.ndarray] = None
     epsilon: Optional[np.ndarray] = None
+    W_total: Optional[np.ndarray] = None
 
 
 class TDGLSolver:
@@ -122,6 +124,12 @@ class TDGLSolver:
         terminal_currents: Union[Callable, Dict[str, float], None] = None,
         disorder_epsilon: Union[Callable, float] = 1.0,
         seed_solution: Optional[Solution] = None,
+        use_heat: bool = False,
+        T_0: float = 1,            # 无量纲临界温度
+        kappa_eff: float = 0.06,    # 有效热导率 (无量纲)
+        eta: float = 5.0,           # 与环境的热交换系数 (无量纲)
+        C_eff: float = 0.65,        # 有效热容 (无量纲)
+        T_heat: float = 1/5
     ):
         self.device = device
         self.options = options
@@ -129,7 +137,12 @@ class TDGLSolver:
         self.terminal_currents = terminal_currents
         self.seed_solution = seed_solution
         # True to use heat disorder, update epsilon according to the self.update_heat_epsilon function.
-        self.use_heat = True
+        self.use_heat = use_heat
+        self.T_0 = T_0
+        self.kappa_eff = kappa_eff
+        self.eta = eta
+        self.C_eff = C_eff
+        self.T_heat = T_heat
         
         if self.options.gpu:
             assert cupy is not None
@@ -282,7 +295,6 @@ class TDGLSolver:
         if options.sparse_solver is SparseSolver.PARDISO:
             assert self.operators.mu_laplacian_lu is None
             assert pypardiso is not None
-
         # Initialize the order parameter and electric potential
         psi_init = np.ones(len(mesh.sites), dtype=np.complex128)
         if terminal_psi is not None:
@@ -326,9 +338,6 @@ class TDGLSolver:
         self.current_step = 0
         self.current_time = 0.0
         self.current_dt = 1e-6
-        
-        # Calculate temperature scaling factor for heat diffusion
-        self._calculate_temperature_scale()
 
 
         # Running list of the max abs change in |psi|^2 between subsequent solve steps.
@@ -339,86 +348,6 @@ class TDGLSolver:
 
         if options.monitor:
             os.environ["HDF5_USE_FILE_LOCKING"] = "FALSE"
-    
-    def _calculate_temperature_scale(self):
-        """Calculate and store the temperature scaling factor for heat diffusion.
-        
-        Based on TDGL unit system, we derive the temperature scale from 
-        the fundamental energy scale and physical constants.
-        
-        Two approaches are implemented:
-        1. Via voltage scale: T_scale = V₀ / k_B
-        2. Direct from fundamentals: T_scale = Φ₀² / ((2π)² ξ² μ₀ σ λ² k_B) × correction_factor
-        
-        The voltage scale approach is more direct, but the fundamental approach
-        shows the explicit dependence on quantum flux and material parameters.
-        """
-        # Get device parameters
-        device = self.device
-        ureg = device.ureg
-        
-        # Physical constants
-        k_B = 1.381e-23  # J/K
-        k_B_eV_per_K = 8.617e-5  # eV/K
-        Phi_0 = 2.067e-15  # Wb (flux quantum)
-        mu_0 = 4 * np.pi * 1e-7  # H/m
-        
-        # Get the voltage scale V_0 from the device
-        if device.conductivity is not None:
-            # Method 1: Via voltage scale (standard approach)
-            V_0 = device.V0()  # This is in physical units (Volts)
-            V_0_volts = V_0.to("volts").magnitude
-            T_scale_method1 = V_0_volts / k_B_eV_per_K
-            
-            # Method 2: Direct from fundamental quantities (following user's insight)
-            # Get material parameters in SI units
-            xi_si = device.coherence_length.to("meters").magnitude
-            lambda_si = device.london_lambda.to("meters").magnitude
-            sigma_si = device.conductivity.to("siemens/meter").magnitude
-            
-            # User's formula with correction for proper temperature dimensions
-            # T_scale = Φ₀² / ((2π)² ξ² μ₀ σ λ² k_B) × correction_factor
-            # The correction factor comes from the relationship between V₀ and the fundamental expression
-            
-            fundamental_energy_scale = Phi_0**2 / ((2*np.pi)**2 * xi_si**2 * mu_0 * sigma_si * lambda_si**2)
-            T_scale_method2 = fundamental_energy_scale / k_B
-            
-            # The two methods should be related by a simple factor
-            # Let's use method 1 as the primary result but log both for comparison
-            self.temperature_scale = T_scale_method1
-            
-            logger.info(f"Temperature scale calculation:")
-            logger.info(f"  Method 1 (via V₀): {T_scale_method1:.2f} K")
-            logger.info(f"  Method 2 (fundamental): {T_scale_method2:.2e} K")
-            logger.info(f"  Ratio (M2/M1): {T_scale_method2/T_scale_method1:.2e}")
-            logger.info(f"  Using Method 1: {self.temperature_scale:.2f} K")
-            
-        else:
-            # Fallback: use a typical superconductor critical temperature
-            # This preserves backward compatibility when conductivity is not defined
-            logger.warning(
-                "Device conductivity not defined. Using default temperature scale of 10 K. "
-                "For accurate heat diffusion, please define device.layer.conductivity."
-            )
-            self.temperature_scale = 10.0  # Kelvin
-        
-        # Store as attribute for easy access and modification
-        # Users can still modify this value if needed: solver.temperature_scale = new_value
-    
-    def get_temperature_kelvin(self):
-        """Get the current temperature in Kelvin.
-        
-        Returns
-        -------
-        array_like or None
-            Temperature in Kelvin, or None if temperature hasn't been calculated yet
-        """
-        if hasattr(self, 'temperature') and self.temperature is not None:
-            return self.temperature * self.temperature_scale
-        else:
-            return None
-    
-
 
     
     def update_mu_boundary(self, time: float) -> None:
@@ -469,15 +398,12 @@ class TDGLSolver:
             Updated epsilon array based on temperature distribution
         """
         # ===== 热扩散参数设置 (可在此处调节) =====
-        T_c = 24        # 无量纲临界温度
-        kappa_eff = 0.06    # 有效热导率 (无量纲)
-        eta = 0.2        # 与环境的热交换系数 (无量纲)
-        T_0 = 12        # 无量纲环境温度 (低于T_c)
-        C_eff = 0.65     # 有效热容 (无量纲)
+        T_0 = self.T_0            # 无量纲临界温度
+        kappa_eff = self.kappa_eff    # 有效热导率 (无量纲)
+        eta = self.eta           # 与环境的热交换系数 (无量纲)
+        C_eff = self.C_eff        # 有效热容 (无量纲)
+        T_heat = self.T_heat
         
-        # 性能优化参数
-        storage_interval = 10  # 每10步存储一次数据
-        temp_change_threshold = 1e-8  # 温度变化阈值
             
         # ===== 初始化和预计算 =====
         if step == 0:
@@ -517,7 +443,7 @@ class TDGLSolver:
         
         # 合并计算，减少临时数组创建
         # 源项：焦耳加热和环境冷却
-        source_term = 0.5 * W_total - eta * (self.temperature - T_0)
+        source_term = 0.5 * W_total - eta * (self.temperature - T_heat)
         
         # 完整的扩散项
         diffusion_term = kappa_eff * (laplacian_T + boundary_term)
@@ -525,36 +451,12 @@ class TDGLSolver:
         # 计算温度变化率 ∂T/∂t
         dT_dt = (diffusion_term + source_term) / C_eff
         
-        # 记录温度变化幅度（用于下次判断是否跳过计算）
-        self.last_temp_change = np.max(np.abs(dT_dt)) if len(dT_dt) > 0 else 0.0
-        
         # In-place 更新温度：T^{n+1} = T^n + dt * ∂T/∂t
         self.temperature += dt * dT_dt
-        
-        # 确保温度为正值（物理约束）- in-place操作
-        np.maximum(self.temperature, 0.01, out=self.temperature)
                 
         # ===== 计算新的epsilon =====
         # epsilon = T_c/T - 1，使用 in-place 操作
-        epsilon_new = T_c / self.temperature - 1.0
-        
-        # ===== 有选择地存储数据 =====
-        # if hasattr(self, 'heat_relate_nums') and step % storage_interval == 0:
-        #     # 只在指定间隔存储数据，减少内存开销
-        #     current_step = getattr(self, 'current_step', step)
-        #     current_time = getattr(self, 'current_time', 0.0)
-            
-        #     self.heat_relate_nums['temperature'].append(self.temperature.copy())
-        #     self.heat_relate_nums['step'].append(current_step)
-        #     self.heat_relate_nums['time'].append(current_time)
-        #     if hasattr(self, 'W_total') and self.W_total is not None:
-        #         self.heat_relate_nums['W_total'].append(self.W_total.copy())
-            
-        #     # 限制历史数据长度，防止内存无限增长
-        #     max_history = 1000
-        #     for key in self.heat_relate_nums:
-        #         if len(self.heat_relate_nums[key]) > max_history:
-        #             self.heat_relate_nums[key] = self.heat_relate_nums[key][-max_history:]
+        epsilon_new = 1 - self.temperature
         
         return epsilon_new
     
@@ -811,7 +713,7 @@ class TDGLSolver:
             del A_induced_vals[:-2]
         return A_induced, screening_error
     
-    def _calculate_total_power_density(self, dA_dt, psi, abs_sq_psi, old_sq_psi, dt):
+    def _calculate_total_power_density(self, dA_dt, previous_psi, psi, abs_sq_psi, old_sq_psi, normal_current, dt):
         """Calculate total power density W_total according to the formula:
         W_total = 2(∂A/∂t)^2 + (2u/sqrt(1+γ^2|ψ|^2))(|∂ψ/∂t|^2) + (γ^2/4)(∂|ψ|^2/∂t)^2
         
@@ -819,6 +721,8 @@ class TDGLSolver:
         ----------
         dA_dt : array_like
             Time derivative of vector potential
+        previous_psi : array_like
+            Previous order parameter
         psi : array_like 
             Order parameter
         abs_sq_psi : array_like
@@ -845,8 +749,7 @@ class TDGLSolver:
             xp = cupy
         
         # Calculate ∂ψ/∂t using current and previous psi values
-        dpsi_dt = (psi - self.previous_psi) / dt if hasattr(self, 'previous_psi') else xp.zeros_like(psi)
-        self.previous_psi = psi.copy()
+        dpsi_dt = (psi - previous_psi) / dt
         
         # Term 2: (2u/sqrt(1+γ^2|ψ|^2))(|∂ψ/∂t|^2)
         term2 = (2 * self.u / xp.sqrt(1 + self.gamma**2 * abs_sq_psi)) * xp.abs(dpsi_dt)**2
@@ -854,6 +757,7 @@ class TDGLSolver:
         # Term 3: (γ^2/4)(∂|ψ|^2/∂t)^2
         d_abspsisq_dt = (abs_sq_psi - old_sq_psi) / dt
         term3 = (self.gamma**2 / 4) * d_abspsisq_dt**2
+        
         
         return term1 + term2 + term3
     
@@ -898,6 +802,7 @@ class TDGLSolver:
         time = state["time"]
         A_induced = induced_vector_potential
         prev_A_applied = A_applied = applied_vector_potential
+        previous_psi = psi
         
         # Update current step and time for heat diffusion
         self.current_step = step
@@ -969,7 +874,7 @@ class TDGLSolver:
             mu, supercurrent, normal_current = self.solve_for_observables(psi, dA_dt)
             
             # Calculate total power density
-            self.W_total = self._calculate_total_power_density(dA_dt, psi, abs_sq_psi, old_sq_psi, dt)
+            self.W_total = self._calculate_total_power_density(dA_dt, previous_psi, psi, abs_sq_psi, old_sq_psi, dt)
             
             if options.include_screening:
                 # Evaluate the induced vector potential
@@ -986,6 +891,13 @@ class TDGLSolver:
             running_state.append("theta", xp.angle(psi[self.probe_points]))
         if options.include_screening:
             running_state.append("screening_iterations", screening_iteration)
+        if self.use_heat:
+            if self.probe_points is not None:
+                # Save W_total at probe points
+                running_state.append("W_total", self.W_total[self.probe_points])
+            else:
+                # Save W_total at all mesh sites
+                running_state.append("W_total", self.W_total)
 
         if options.adaptive:
             # Compute the max abs change in |psi|^2, averaged over the adaptive window,
@@ -1003,6 +915,10 @@ class TDGLSolver:
             results.append(current_A_applied)
         if self.dynamic_epsilon:
             results.append(epsilon)
+        if self.use_heat:
+            results.append(self.W_total)
+        else:
+            results.append(None)  # W_total
         return SolverResult(*results)
 
     def solve(self) -> Optional[Solution]:
@@ -1068,6 +984,12 @@ class TDGLSolver:
             running_names_and_sizes["theta"] = len(probe_points)
         if options.include_screening:
             running_names_and_sizes["screening_iterations"] = 1
+        if self.use_heat:
+            if probe_points is not None:
+                running_names_and_sizes["W_total"] = len(probe_points)
+            else:
+                # If no probe points, save at all mesh sites
+                running_names_and_sizes["W_total"] = len(self.sites)
 
         with DataHandler(output_file=output_file, logger=logger) as data_handler:
             data_handler.save_mesh(self.device.mesh)
@@ -1075,6 +997,15 @@ class TDGLSolver:
                 self.device.to_hdf5(
                     data_handler.tmp_file.create_group("solution/device")
                 )
+                # Save heat-related parameters
+                if self.use_heat:
+                    heat_group = data_handler.tmp_file.create_group("solution/heat_parameters")
+                    heat_group.attrs["use_heat"] = self.use_heat
+                    heat_group.attrs["T_0"] = self.T_0
+                    heat_group.attrs["kappa_eff"] = self.kappa_eff
+                    heat_group.attrs["eta"] = self.eta
+                    heat_group.attrs["C_eff"] = self.C_eff
+                    heat_group.attrs["T_heat"] = self.T_heat
             logger.info(
                 f"Simulation started at {start_time}"
                 f" using sparse solver {options.sparse_solver.value!r}"
