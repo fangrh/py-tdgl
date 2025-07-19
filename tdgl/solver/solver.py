@@ -758,8 +758,12 @@ class TDGLSolver:
         d_abspsisq_dt = (abs_sq_psi - old_sq_psi) / dt
         term3 = (self.gamma**2 / 4) * d_abspsisq_dt**2
         
+        # Term 4:
+        directions = self.device.mesh.get_quantity_on_site(normal_current)
+        norm = np.linalg.norm(directions, axis=1)
+        term4 = norm * norm
         
-        return term1 + term2 + term3
+        return term1 + term2 + term3 + term4
     
     def update(
         self,
@@ -872,9 +876,9 @@ class TDGLSolver:
             )
             # Update the scalar potential, supercurrent density, and normal current density
             mu, supercurrent, normal_current = self.solve_for_observables(psi, dA_dt)
-            
+            self.normal_current = normal_current
             # Calculate total power density
-            self.W_total = self._calculate_total_power_density(dA_dt, previous_psi, psi, abs_sq_psi, old_sq_psi, dt)
+            self.W_total = self._calculate_total_power_density(dA_dt, previous_psi, psi, abs_sq_psi, old_sq_psi, normal_current, dt)
             
             if options.include_screening:
                 # Evaluate the induced vector potential
