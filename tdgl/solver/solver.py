@@ -125,11 +125,6 @@ class TDGLSolver:
         disorder_epsilon: Union[Callable, float] = 1.0,
         seed_solution: Optional[Solution] = None,
         use_heat: bool = False,
-        T_0: float = 1,            # 无量纲临界温度
-        kappa_eff: float = 0.06,    # 有效热导率 (无量纲)
-        eta: float = 5.0,           # 与环境的热交换系数 (无量纲)
-        C_eff: float = 0.65,        # 有效热容 (无量纲)
-        T_heat: float = 1/5
     ):
         self.device = device
         self.options = options
@@ -138,11 +133,14 @@ class TDGLSolver:
         self.seed_solution = seed_solution
         # True to use heat disorder, update epsilon according to the self.update_heat_epsilon function.
         self.use_heat = use_heat
-        self.T_0 = T_0
-        self.kappa_eff = kappa_eff
-        self.eta = eta
-        self.C_eff = C_eff
-        self.T_heat = T_heat
+        
+        # 检查热扩散参数
+        if self.use_heat:
+            layer = self.device.layer
+            required_params = ['T_0', 'kappa_eff', 'eta', 'C_eff', 'T_heat']
+            missing_params = [param for param in required_params if getattr(layer, param) is None]
+            if missing_params:
+                raise ValueError(f"启用热功能时，device.layer 中缺少以下参数: {missing_params}")
         
         if self.options.gpu:
             assert cupy is not None
@@ -397,12 +395,13 @@ class TDGLSolver:
         Returns:
             Updated epsilon array based on temperature distribution
         """
-        # ===== 热扩散参数设置 (可在此处调节) =====
-        T_0 = self.T_0            # 无量纲临界温度
-        kappa_eff = self.kappa_eff    # 有效热导率 (无量纲)
-        eta = self.eta           # 与环境的热交换系数 (无量纲)
-        C_eff = self.C_eff        # 有效热容 (无量纲)
-        T_heat = self.T_heat
+        # ===== 从 device.layer 获取热扩散参数 =====
+        layer = self.device.layer
+        T_0 = layer.T_0            # 无量纲临界温度
+        kappa_eff = layer.kappa_eff    # 有效热导率 (无量纲)
+        eta = layer.eta           # 与环境的热交换系数 (无量纲)
+        C_eff = layer.C_eff        # 有效热容 (无量纲)
+        T_heat = layer.T_heat
         
             
         # ===== 初始化和预计算 =====
@@ -1005,11 +1004,11 @@ class TDGLSolver:
                 if self.use_heat:
                     heat_group = data_handler.tmp_file.create_group("solution/heat_parameters")
                     heat_group.attrs["use_heat"] = self.use_heat
-                    heat_group.attrs["T_0"] = self.T_0
-                    heat_group.attrs["kappa_eff"] = self.kappa_eff
-                    heat_group.attrs["eta"] = self.eta
-                    heat_group.attrs["C_eff"] = self.C_eff
-                    heat_group.attrs["T_heat"] = self.T_heat
+                    heat_group.attrs["T_0"] = self.device.layer.T_0
+                    heat_group.attrs["kappa_eff"] = self.device.layer.kappa_eff
+                    heat_group.attrs["eta"] = self.device.layer.eta
+                    heat_group.attrs["C_eff"] = self.device.layer.C_eff
+                    heat_group.attrs["T_heat"] = self.device.layer.T_heat
             logger.info(
                 f"Simulation started at {start_time}"
                 f" using sparse solver {options.sparse_solver.value!r}"
