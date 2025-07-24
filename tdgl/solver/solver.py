@@ -390,7 +390,7 @@ class TDGLSolver:
     def update_heat_epsilon(self, step, dt) -> np.ndarray:
         """Update the value of epsilon according to heat diffusion calculation.
         
-        Optimized version with reduced computational overhead.
+        If dt > 1e-3, split into multiple 1e-3 steps and a remainder step for stability.
         
         Returns:
             Updated epsilon array based on temperature distribution
@@ -402,24 +402,19 @@ class TDGLSolver:
         eta = layer.eta           # 与环境的热交换系数 (无量纲)
         C_eff = layer.C_eff        # 有效热容 (无量纲)
         T_heat = layer.T_heat
-        
-            
+
         # ===== 初始化和预计算 =====
         if step == 0:
             # 第一次调用时初始化
             self.temperature = np.full(len(self.sites), T_0, dtype=np.float64)
             W_total = np.zeros(len(self.sites), dtype=np.float64)
-            
             # 预计算热扩散矩阵（避免每步重新计算）
             self.heat_laplacian = self.operators.mu_laplacian * kappa_eff
-            
             # 初始化边界条件
             num_boundary_edges = len(self.device.mesh.edge_mesh.boundary_edge_indices)
             self.T_boundary = np.zeros(num_boundary_edges, dtype=np.float64)
-            
             # 初始化性能追踪
             self.last_temp_change = np.inf
-            
         else:
             # 确保初始化完成
             if not hasattr(self, 'temperature'):
@@ -428,35 +423,34 @@ class TDGLSolver:
                 num_boundary_edges = len(self.device.mesh.edge_mesh.boundary_edge_indices)
                 self.T_boundary = np.zeros(num_boundary_edges, dtype=np.float64)
                 self.last_temp_change = np.inf
-            
             # 获取W_total
             if hasattr(self, 'W_total') and self.W_total is not None:
                 W_total = self.W_total
             else:
                 W_total = np.zeros(len(self.sites), dtype=np.float64)
-        
-        # ===== 热扩散计算 =====
-        # 使用预计算的矩阵
-        laplacian_T = self.heat_laplacian @ self.temperature
-        boundary_term = self.operators.mu_boundary_laplacian @ self.T_boundary
-        
-        # 合并计算，减少临时数组创建
-        # 源项：焦耳加热和环境冷却
-        source_term = 0.5 * W_total - eta * (self.temperature - T_heat)
-        
-        # 完整的扩散项
-        diffusion_term = kappa_eff * (laplacian_T + boundary_term)
-        
-        # 计算温度变化率 ∂T/∂t
-        dT_dt = (diffusion_term + source_term) / C_eff
-        
-        # In-place 更新温度：T^{n+1} = T^n + dt * ∂T/∂t
-        self.temperature += dt * dT_dt
-                
+
+        # ===== 热扩散计算，支持大dt分步 =====
+        max_dt = 1e-3
+        n_full = int(dt // max_dt)
+        dt_remain = dt - n_full * max_dt
+
+        def single_heat_step(dt_local):
+            laplacian_T = self.heat_laplacian @ self.temperature
+            source_term = 0.5 * W_total - eta * (self.temperature - T_heat)
+            diffusion_term = kappa_eff * (laplacian_T)
+            dT_dt = (diffusion_term + source_term) / C_eff
+            self.temperature += dt_local * dT_dt
+
+        if dt <= max_dt:
+            single_heat_step(dt)
+        else:
+            for _ in range(n_full):
+                single_heat_step(max_dt)
+            if dt_remain > 0:
+                single_heat_step(dt_remain)
+
         # ===== 计算新的epsilon =====
-        # epsilon = T_c/T - 1，使用 in-place 操作
         epsilon_new = 1 - self.temperature
-        
         return epsilon_new
     
     def _get_boundary_sites(self):
