@@ -265,6 +265,157 @@ def plot_currents(
     return fig, ax
 
 
+def plot_order_parameter_current(
+    solution: Solution,
+    ax: Union[plt.Axes, None] = None,
+    squared: bool = False,
+    mag_cmap: str = "viridis",
+    shading: str = "gouraud",
+    dataset: Union[str, None] = None,
+    current_units: Union[str, None] = None,
+    show_current_streamlines: bool = True,
+    streamplot: Union[bool, None] = None,
+    min_stream_amp: float = 0.025,
+    stream_color: str = "w",
+    stream_density: float = 1.0,
+    stream_linewidth: float = 0.75,
+    stream_alpha: float = 1.0,
+    tight_layout: bool = True,
+    **kwargs,
+) -> Tuple[plt.Figure, plt.Axes]:
+    """Plots the order parameter magnitude with current streamlines overlaid.
+
+    .. seealso:
+
+        :meth:`tdgl.Solution.plot_order_parameter_current`
+
+    Args:
+        solution: The solution for which to plot the order parameter and current.
+        ax: Matplotlib axes on which to plot.
+        squared: Whether to plot the magnitude squared, :math:`|\\psi|^2`.
+        mag_cmap: Name of the colormap to use for the order parameter magnitude.
+        shading: May be ``"flat"`` or ``"gouraud"``. The latter does some interpolation.
+        dataset: The current dataset to plot, either ``"supercurrent"`` or
+            ``"normal_current"``. ``None`` indicates the total current density.
+        current_units: Units in which to plot the current density. Defaults to
+            ``solution.current_units / solution.device.length_units``.
+        show_current_streamlines: Whether to display current streamlines on the plot.
+        streamplot: Deprecated alias for show_current_streamlines. If provided,
+            it overrides show_current_streamlines.
+        min_stream_amp: Streamlines will not be drawn anywhere the
+            current density is less than min_stream_amp * max(current_density).
+        stream_color: Color of the streamlines.
+        stream_density: Density of the streamlines.
+        stream_linewidth: Line width of the streamlines.
+        stream_alpha: Transparency of the streamlines (0.0 = transparent, 1.0 = opaque).
+        tight_layout: Whether to use tight axis limits without margins.
+
+    Returns:
+        matplotlib Figure and Axes.
+    """
+    if ax is None:
+        kwargs.setdefault("figsize", (8, 6))
+        kwargs.setdefault("constrained_layout", True)
+        fig, ax = plt.subplots(**kwargs)
+    else:
+        fig = ax.get_figure()
+    
+    device = solution.device
+    length_units = device.ureg(device.length_units).units
+    points = device.points
+    triangles = device.triangles
+    
+    # Plot order parameter magnitude as background
+    psi = solution.tdgl_data.psi
+    mag = np.abs(psi)
+    psi_label = "$|\\psi|$"
+    if squared:
+        mag = mag**2
+        psi_label = "$|\\psi|^2$"
+    
+    im = ax.tripcolor(
+        points[:, 0],
+        points[:, 1],
+        mag,
+        triangles=triangles,
+        vmin=0,
+        vmax=1,
+        cmap=mag_cmap,
+        shading=shading,
+    )
+    cbar = fig.colorbar(im, ax=ax)
+    cbar.set_label(psi_label)
+    
+    # Handle backward compatibility for streamplot parameter
+    if streamplot is not None:
+        show_streamlines = streamplot
+    else:
+        show_streamlines = show_current_streamlines
+    
+    # Add current streamlines if requested (same as plot_currents)
+    if show_streamlines:
+        # Get current units
+        old_units = device.ureg(f"{solution.current_units} / {device.length_units}").units
+        units = current_units or old_units
+        if isinstance(units, str):
+            units = device.ureg(units).units
+        
+        # Generate current grid data (same as plot_currents)
+        xgrid, ygrid, Jgrid = solution.grid_current_density(
+            dataset=dataset,
+            grid_shape=200,
+            method="cubic",
+            units=str(units),
+            with_units=False,
+        )
+        Jx, Jy = Jgrid
+        J = np.sqrt(Jx**2 + Jy**2)
+        xy = np.array([xgrid.ravel(), ygrid.ravel()]).T
+        ix = np.where(~solution.device.contains_points(xy))[0]
+        ix = np.unravel_index(ix, J.shape)
+        Jx[ix] = np.nan
+        Jy[ix] = np.nan
+        if min_stream_amp is not None:
+            cutoff = np.nanmax(J) * min_stream_amp
+            Jx[J < cutoff] = np.nan
+            Jy[J < cutoff] = np.nan
+        
+        # Draw streamlines (same parameters as plot_currents, with added alpha)
+        stream_lines = ax.streamplot(
+            xgrid, ygrid, Jx, Jy, 
+            color=stream_color, 
+            density=stream_density, 
+            linewidth=stream_linewidth
+        )
+        
+        # Set alpha for streamlines and arrows
+        if stream_alpha != 1.0:
+            # Set alpha for the streamlines
+            stream_lines.lines.set_alpha(stream_alpha)
+            
+            # Set alpha for arrows if present
+            if hasattr(stream_lines, 'arrows') and stream_lines.arrows is not None:
+                stream_lines.arrows.set_alpha(stream_alpha)
+                # Also set alpha for arrow patches if they exist
+                for patch in stream_lines.arrows.get_children():
+                    if hasattr(patch, 'set_alpha'):
+                        patch.set_alpha(stream_alpha)
+    
+    # Set axis properties (no title)
+    ax.set_aspect("equal")
+    ax.set_xlabel(f"$x$ [${length_units:~L}$]")
+    ax.set_ylabel(f"$y$ [${length_units:~L}$]")
+    
+    # Set tight axis limits to remove margins if requested
+    if tight_layout:
+        x_min, x_max = points[:, 0].min(), points[:, 0].max()
+        y_min, y_max = points[:, 1].min(), points[:, 1].max()
+        ax.set_xlim(x_min, x_max)
+        ax.set_ylim(y_min, y_max)
+    
+    return fig, ax
+
+
 def plot_field_at_positions(
     solution: Solution,
     positions: np.ndarray,
@@ -720,7 +871,9 @@ for func in (
     plot_currents,
     plot_field_at_positions,
     plot_order_parameter,
+    plot_order_parameter_current,
     plot_scalar_potential,
     plot_vorticity,
 ):
     _patch_docstring(func)
+

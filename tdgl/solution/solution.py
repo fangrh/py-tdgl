@@ -1104,6 +1104,12 @@ class Solution:
 
         return plot_order_parameter(self, **kwargs)
 
+    def plot_order_parameter_current(self, **kwargs) -> Tuple[plt.Figure, plt.Axes]:
+        """An alias for :func:`tdgl.plot_order_parameter_current`."""
+        from .plot_solution import plot_order_parameter_current
+
+        return plot_order_parameter_current(self, **kwargs)
+
     def plot_field_at_positions(
         self, positions: np.ndarray, **kwargs
     ) -> Tuple[plt.Figure, np.ndarray]:
