@@ -281,6 +281,13 @@ def plot_order_parameter_current(
     stream_linewidth: float = 0.75,
     stream_alpha: float = 1.0,
     tight_layout: bool = True,
+    colorbar: bool = True,
+    ylabel: bool = True,
+    xlabel: bool = True,
+    ytick_label: bool = True,
+    xtick_label: bool = True,
+    label_fontsize: int = 16,
+    tick_label_fontsize: int = 12,
     **kwargs,
 ) -> Tuple[plt.Figure, plt.Axes]:
     """Plots the order parameter magnitude with current streamlines overlaid.
@@ -309,7 +316,14 @@ def plot_order_parameter_current(
         stream_linewidth: Line width of the streamlines.
         stream_alpha: Transparency of the streamlines (0.0 = transparent, 1.0 = opaque).
         tight_layout: Whether to use tight axis limits without margins.
-
+        colorbar: Whether to add a colorbar to the plot.
+        ylabel: Whether to add a ylabel to the plot.
+        xlabel: Whether to add a xlabel to the plot.
+        ytick_label: Whether to add a ytick label to the plot.
+        xtick_label: Whether to add a xtick label to the plot.
+        label_fontsize: Font size for axis labels.
+        tick_label_fontsize: Font size for tick labels.
+        colorbar_label_fontsize: Font size for colorbar label.
     Returns:
         matplotlib Figure and Axes.
     """
@@ -343,8 +357,12 @@ def plot_order_parameter_current(
         cmap=mag_cmap,
         shading=shading,
     )
-    cbar = fig.colorbar(im, ax=ax)
-    cbar.set_label(psi_label)
+    if colorbar:
+        cbar = fig.colorbar(im, ax=ax)
+        # 
+        cbar.set_label(psi_label, fontsize=label_fontsize)
+        # 
+        cbar.ax.tick_params(labelsize=tick_label_fontsize)
     
     # Handle backward compatibility for streamplot parameter
     if streamplot is not None:
@@ -403,8 +421,18 @@ def plot_order_parameter_current(
     
     # Set axis properties (no title)
     ax.set_aspect("equal")
-    ax.set_xlabel(f"$x$ [${length_units:~L}$]")
-    ax.set_ylabel(f"$y$ [${length_units:~L}$]")
+    if xlabel:
+        ax.set_xlabel(f"$x$ (${length_units:~L}$)", fontsize=label_fontsize)
+    if ylabel:
+        ax.set_ylabel(f"$y$ (${length_units:~L}$)", fontsize=label_fontsize)
+    if not ytick_label:
+        ax.set_yticklabels([])
+    else:
+        ax.tick_params(axis='y', labelsize=tick_label_fontsize, direction='in')
+    if not xtick_label:
+        ax.set_xticklabels([])
+    else:
+        ax.tick_params(axis='x', labelsize=tick_label_fontsize, direction='in')
     
     # Set tight axis limits to remove margins if requested
     if tight_layout:
