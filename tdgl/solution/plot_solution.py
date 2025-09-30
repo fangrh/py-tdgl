@@ -284,10 +284,19 @@ def plot_order_parameter_current(
     colorbar: bool = True,
     ylabel: bool = True,
     xlabel: bool = True,
+    custom_xlabel: Union[str, None] = None,
+    custom_ylabel: Union[str, None] = None,
+    y_ticks = None,
+    x_ticks = None,
     ytick_label: bool = True,
     xtick_label: bool = True,
     label_fontsize: int = 16,
     tick_label_fontsize: int = 12,
+    plot_hole: bool = False,
+    hole_color: str = "black",
+    hole_y_gap: Union[float, None] = None,
+    hole_x_gap: Union[float, None] = None,
+    psi_label = "$|\\psi|$",
     **kwargs,
 ) -> Tuple[plt.Figure, plt.Axes]:
     """Plots the order parameter magnitude with current streamlines overlaid.
@@ -319,11 +328,16 @@ def plot_order_parameter_current(
         colorbar: Whether to add a colorbar to the plot.
         ylabel: Whether to add a ylabel to the plot.
         xlabel: Whether to add a xlabel to the plot.
+        y_ticks: Custom y-axis tick positions. If None, use default ticks.
+        x_ticks: Custom x-axis tick positions. If None, use default ticks.
         ytick_label: Whether to add a ytick label to the plot.
         xtick_label: Whether to add a xtick label to the plot.
         label_fontsize: Font size for axis labels.
         tick_label_fontsize: Font size for tick labels.
-        colorbar_label_fontsize: Font size for colorbar label.
+        plot_hole: Whether to plot a dashed rectangular hole outline.
+        hole_color: Color of the hole outline.
+        hole_y_gap: Height (y-direction width) of the hole rectangle.
+        hole_x_gap: Width (x-direction width) of the hole rectangle.
     Returns:
         matplotlib Figure and Axes.
     """
@@ -342,10 +356,9 @@ def plot_order_parameter_current(
     # Plot order parameter magnitude as background
     psi = solution.tdgl_data.psi
     mag = np.abs(psi)
-    psi_label = "$|\\psi|$"
-    if squared:
-        mag = mag**2
-        psi_label = "$|\\psi|^2$"
+    # if squared:
+    #     mag = mag**2
+    #     psi_label = "$|\\psi|^2$"
     
     im = ax.tripcolor(
         points[:, 0],
@@ -422,9 +435,23 @@ def plot_order_parameter_current(
     # Set axis properties (no title)
     ax.set_aspect("equal")
     if xlabel:
-        ax.set_xlabel(f"$x$ (${length_units:~L}$)", fontsize=label_fontsize)
+        if custom_xlabel is not None:
+            ax.set_xlabel(custom_xlabel, fontsize=label_fontsize)
+        else:
+            ax.set_xlabel(f"$x$ (${length_units:~L}$)", fontsize=label_fontsize)    
     if ylabel:
-        ax.set_ylabel(f"$y$ (${length_units:~L}$)", fontsize=label_fontsize)
+        if custom_ylabel is not None:
+            ax.set_ylabel(custom_ylabel, fontsize=label_fontsize)
+        else:
+            ax.set_ylabel(f"$y$ (${length_units:~L}$)", fontsize=label_fontsize)
+    
+    # Set custom ticks if provided
+    if x_ticks is not None:
+        ax.set_xticks(x_ticks)
+    if y_ticks is not None:
+        ax.set_yticks(y_ticks)
+    
+    # Set tick label visibility and formatting
     if not ytick_label:
         ax.set_yticklabels([])
     else:
@@ -440,6 +467,39 @@ def plot_order_parameter_current(
         y_min, y_max = points[:, 1].min(), points[:, 1].max()
         ax.set_xlim(x_min, x_max)
         ax.set_ylim(y_min, y_max)
+    
+    # Plot hole (dashed rectangular outline) if requested
+    if plot_hole:
+        # Get current axis limits
+        xlims = ax.get_xlim()
+        ylims = ax.get_ylim()
+        
+        # Set default rectangle size if not provided (20% of the range)
+        if hole_x_gap is None:
+            hole_x_gap = (xlims[1] - xlims[0]) * 0.2
+        if hole_y_gap is None:
+            hole_y_gap = (ylims[1] - ylims[0]) * 0.2
+        
+        # Calculate hole rectangle coordinates (centered in the plot)
+        x_center = (xlims[0] + xlims[1]) / 2
+        y_center = (ylims[0] + ylims[1]) / 2
+        
+        hole_x_min = x_center - hole_x_gap / 2
+        hole_y_min = y_center - hole_y_gap / 2
+        
+        # Draw dashed rectangle
+        from matplotlib.patches import Rectangle
+        hole_rect = Rectangle(
+            (hole_x_min, hole_y_min), 
+            hole_x_gap, 
+            hole_y_gap,
+            linewidth=2, 
+            edgecolor=hole_color, 
+            facecolor='none', 
+            linestyle='--',
+            clip_on=False  # Allow rectangle to be drawn outside plot area
+        )
+        ax.add_patch(hole_rect)
     
     return fig, ax
 
