@@ -96,3 +96,7 @@ Parts of this package have been adapted from [`SuperDetectorPy`](https://github.
 
 The user interface is adapted from [`SuperScreen`](https://github.com/loganbvh/superscreen).
 
+# Thermal coupling version usage
+
+Please check the folder of run_thermal
+
