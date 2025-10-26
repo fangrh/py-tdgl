@@ -941,6 +941,149 @@ def plot_current_through_paths(
     return (fig, ax), (times, currents)
 
 
+def plot_epsilon(
+    solution: Solution,
+    ax: Union[plt.Axes, None] = None,
+    cmap: str = "RdYlBu_r",
+    auto_range_cutoff: Optional[Union[float, Tuple[float, float]]] = None,
+    vmin: Union[float, None] = None,
+    vmax: Union[float, None] = None,
+    shading: str = "gouraud",
+    **kwargs,
+):
+    """Plots the disorder parameter :math:`\\epsilon(\\mathbf{r})` in the film.
+
+    .. seealso:
+
+        :meth:`tdgl.Solution.plot_epsilon`
+
+    Args:
+        solution: The solution for which to plot epsilon.
+        ax: Matplotlib axes on which to plot.
+        cmap: Name of the matplotlib colormap to use.
+        auto_range_cutoff: Cutoff percentile for :func:`tdgl.solution.plot_solution.auto_range_iqr`.
+        vmin: Color scale minimum.
+        vmax: Color scale maximum.
+        shading: May be ``"flat"`` or ``"gouraud"``. The latter does some interpolation.
+
+    Returns:
+        matplotlib Figure and Axes.
+    """
+    if ax is None:
+        kwargs.setdefault("constrained_layout", True)
+        fig, ax = plt.subplots(**kwargs)
+    else:
+        fig = ax.get_figure()
+    ax.set_aspect("equal")
+    device = solution.device
+    points = device.points
+    triangles = device.triangles
+    length_units = device.ureg(device.length_units).units
+
+    # Get epsilon from the solution
+    epsilon = solution.tdgl_data.epsilon
+
+    clim = setup_color_limits(
+        {"epsilon": epsilon},
+        vmin=vmin,
+        vmax=vmax,
+        auto_range_cutoff=auto_range_cutoff,
+    )["epsilon"]
+    vmin_val, vmax_val = clim
+    norm = mpl.colors.Normalize(vmin=vmin_val, vmax=vmax_val)
+    x, y = points[:, 0], points[:, 1]
+    im = ax.tripcolor(
+        x,
+        y,
+        epsilon,
+        triangles=triangles,
+        cmap=cmap,
+        norm=norm,
+        shading=shading,
+    )
+    cbar = fig.colorbar(im, ax=ax)
+    ax.set_title("$\\epsilon$")
+    ax.set_aspect("equal")
+    ax.set_xlabel(f"$x$ [${length_units:~L}$]")
+    ax.set_ylabel(f"$y$ [${length_units:~L}$]")
+    cbar.set_label("$\\epsilon$")
+    ax.set_xlim(x.min(), x.max())
+    ax.set_ylim(y.min(), y.max())
+    return fig, ax
+
+
+def plot_temperature(
+    solution: Solution,
+    ax: Union[plt.Axes, None] = None,
+    cmap: str = "hot",
+    auto_range_cutoff: Optional[Union[float, Tuple[float, float]]] = None,
+    vmin: Union[float, None] = None,
+    vmax: Union[float, None] = None,
+    shading: str = "gouraud",
+    **kwargs,
+):
+    """Plots the temperature field :math:`T(\\mathbf{r}) = 1 - \\epsilon(\\mathbf{r})` in the film.
+
+    .. seealso:
+
+        :meth:`tdgl.Solution.plot_temperature`
+
+    Args:
+        solution: The solution for which to plot temperature.
+        ax: Matplotlib axes on which to plot.
+        cmap: Name of the matplotlib colormap to use.
+        auto_range_cutoff: Cutoff percentile for :func:`tdgl.solution.plot_solution.auto_range_iqr`.
+        vmin: Color scale minimum.
+        vmax: Color scale maximum.
+        shading: May be ``"flat"`` or ``"gouraud"``. The latter does some interpolation.
+
+    Returns:
+        matplotlib Figure and Axes.
+    """
+    if ax is None:
+        kwargs.setdefault("constrained_layout", True)
+        fig, ax = plt.subplots(**kwargs)
+    else:
+        fig = ax.get_figure()
+    ax.set_aspect("equal")
+    device = solution.device
+    points = device.points
+    triangles = device.triangles
+    length_units = device.ureg(device.length_units).units
+
+    # Get epsilon from the solution and calculate temperature
+    epsilon = solution.tdgl_data.epsilon
+    temperature = 1.0 - epsilon
+
+    clim = setup_color_limits(
+        {"temperature": temperature},
+        vmin=vmin,
+        vmax=vmax,
+        auto_range_cutoff=auto_range_cutoff,
+    )["temperature"]
+    vmin_val, vmax_val = clim
+    norm = mpl.colors.Normalize(vmin=vmin_val, vmax=vmax_val)
+    x, y = points[:, 0], points[:, 1]
+    im = ax.tripcolor(
+        x,
+        y,
+        temperature,
+        triangles=triangles,
+        cmap=cmap,
+        norm=norm,
+        shading=shading,
+    )
+    cbar = fig.colorbar(im, ax=ax)
+    ax.set_title("$T$ (Temperature)")
+    ax.set_aspect("equal")
+    ax.set_xlabel(f"$x$ [${length_units:~L}$]")
+    ax.set_ylabel(f"$y$ [${length_units:~L}$]")
+    cbar.set_label("$T = 1 - \\epsilon$")
+    ax.set_xlim(x.min(), x.max())
+    ax.set_ylim(y.min(), y.max())
+    return fig, ax
+
+
 def _patch_docstring(func):
     other_func = getattr(Solution, func.__name__)
     other_func.__doc__ = (
@@ -962,6 +1105,8 @@ for func in (
     plot_order_parameter_current,
     plot_scalar_potential,
     plot_vorticity,
+    plot_epsilon,
+    plot_temperature,
 ):
     _patch_docstring(func)
 
