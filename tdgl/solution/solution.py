@@ -1129,3 +1129,15 @@ class Solution:
         from .plot_solution import plot_scalar_potential
 
         return plot_scalar_potential(self, **kwargs)
+
+    def plot_epsilon(self, **kwargs) -> Tuple[plt.Figure, plt.Axes]:
+        """An alias for :func:`tdgl.plot_epsilon`."""
+        from .plot_solution import plot_epsilon
+
+        return plot_epsilon(self, **kwargs)
+
+    def plot_temperature(self, **kwargs) -> Tuple[plt.Figure, plt.Axes]:
+        """An alias for :func:`tdgl.plot_temperature`."""
+        from .plot_solution import plot_temperature
+
+        return plot_temperature(self, **kwargs)

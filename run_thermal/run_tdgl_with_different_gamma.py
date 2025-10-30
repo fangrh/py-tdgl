@@ -43,46 +43,46 @@ gamma = args.gamma
 u = args.u
 sigma = args.sigma
 use_heat = args.use_heat
-T_0 = args.T_0            # 无量纲临界温度
-kappa_eff = args.kappa_eff    # 有效热导率 (无量纲)
-hole_eta = args.hole_eta           # 与环境的热交换系数 (无量纲)
-environment_eta = args.environment_eta           # 与环境的热交换系数 (无量纲)
-C_eff = args.C_eff        # 有效热容 (无量纲)
+T_0 = args.T_0            # Dimensionless critical temperature
+kappa_eff = args.kappa_eff    # Effective thermal conductivity (dimensionless)
+hole_eta = args.hole_eta           # Heat exchange coefficient with environment (dimensionless)
+environment_eta = args.environment_eta           # Heat exchange coefficient with environment (dimensionless)
+C_eff = args.C_eff        # Effective heat capacity (dimensionless)
 T_heat = args.T_heat
 
 layer = tdgl.Layer(coherence_length=xi, 
                    london_lambda=london_lambda, 
                    thickness=d, 
                    gamma=gamma, 
-                   u=u, 
+                   u=u,
                    conductivity=sigma,
                 #    use_heat=use_heat,
-                    T_0=T_0,            # 无量纲临界温度
-                    kappa_eff=kappa_eff,    # 有效热导率 (无量纲)
-                    eta=hole_eta,           # 与环境的热交换系数 (无量纲)
-                    C_eff=C_eff,        # 有效热容 (无量纲)
+                    T_0=T_0,            # Dimensionless critical temperature
+                    kappa_eff=kappa_eff,    # Effective thermal conductivity (dimensionless)
+                    eta=hole_eta,           # Heat exchange coefficient with environment (dimensionless)
+                    C_eff=C_eff,        # Effective heat capacity (dimensionless)
                     T_heat = T_heat)
 
 
-# 超导体disorder参数
-epsilon_normal = 1.0  # 普通超导区域的epsilon值
-epsilon_strip = 1.0  # 中间条带区域的epsilon值
-strip_half_width = 0.1 / 2  # 中间条带的半宽度
+# Superconductor disorder parameters
+epsilon_normal = 1.0  # Epsilon value for normal superconducting regions
+epsilon_strip = 1.0  # Epsilon value for middle strip region
+strip_half_width = 0.1 / 2  # Half width of middle strip
 
 #%% Device geometry
 width = args.width  # total width
 length = args.length  # total length
 # metal_strip_width = 0.1  # width of non-superconducting strip in μm
-electride_distance = args.electride_distance  # 超导体距离两端的长度
-extend = (length-electride_distance)/2  # 两端露出的长度
+electride_distance = args.electride_distance  # Distance of superconductor from endpoints
+extend = (length-electride_distance)/2  # Extension length at both ends
 
-# 创建内部电极（不再位于两端）
-terminal_width = width+2  # 电极宽度
-terminal_thickness = 1  # 电极厚度
+# Create internal electrodes (no longer at endpoints)
+terminal_width = width+2  # Electrode width
+terminal_thickness = 1  # Electrode thickness
 
-# 计算电极位置，使两端各露出extend长度
-top_terminal_y = length/2 - extend - terminal_thickness/2  # 上电极y坐标
-bottom_terminal_y = -top_terminal_y  # 下电极y坐标（对称位置）
+# Calculate electrode positions so both ends extend by length 'extend'
+top_terminal_y = length/2 - extend - terminal_thickness/2  # Top electrode y-coordinate
+bottom_terminal_y = -top_terminal_y  # Bottom electrode y-coordinate (symmetric position)
 
 
 # Create the superconducting film (single piece)
@@ -93,19 +93,19 @@ film = (
 )
 
 
-# 创建电流端子
+# Create current terminals
 source = (
-    tdgl.Polygon("source", points=box(terminal_width, terminal_thickness))  # 电极尺寸
-    .translate(dy=top_terminal_y)  # 位于上部，但不在端部
+    tdgl.Polygon("source", points=box(terminal_width, terminal_thickness))  # Electrode dimensions
+    .translate(dy=top_terminal_y)  # Located at top, but not at endpoint
 )
 drain = (
     tdgl.Polygon("drain", points=box(terminal_width, terminal_thickness))
-    .translate(dy=bottom_terminal_y)  # 位于下部，但不在端部
+    .translate(dy=bottom_terminal_y)  # Located at bottom, but not at endpoint
 )
 
 # Add probe points for voltage measurement (between terminals)
-# 固定探测点位置在y=5.0和y=2.5
-probe_points = [(0, args.probe_distance), (0, -args.probe_distance)]  # 固定位置的探测点
+# Fixed probe point positions at y=probe_distance and y=-probe_distance
+probe_points = [(0, args.probe_distance), (0, -args.probe_distance)]  # Fixed position probe points
 
 
 #%% Create device and generate mesh
@@ -158,43 +158,43 @@ def disorder_function(r, **kwargs):
     else:
         return epsilon_normal  # Normal superconducting region
     
-    
-    
 
-# 定义四段式电流的时间段
-ramp_up_time = 5000    # 第一段：上升到最大值的时间
-max_current_time = 0  # 第二段：保持最大值的时间
-ramp_down_time = 5000 # 第五段降到零
-zero_current_time = 0  # 第四段：保持零的时间
+
+
+# Define time segments for four-stage current
+ramp_up_time = 5000    # Stage 1: Time to ramp up to maximum
+max_current_time = 0  # Stage 2: Time to hold maximum value
+ramp_down_time = 5000 # Stage 3: Time to ramp down to zero
+zero_current_time = 0  # Stage 4: Time to hold at zero
 solve_time = ramp_up_time + max_current_time + ramp_down_time + zero_current_time
-# 定义四段式时间依赖的电流函数
+# Define four-stage time-dependent current function
 def terminal_currents(t):
-    """四段式电流函数:
-    1. 第一段：电流从0线性上升到最大值
-    2. 第二段：保持最大值一定时间
-    3. 第三段：从最大值下降到0
-    4. 第四段：保持0
+    """Four-stage current function:
+    1. Stage 1: Current ramps linearly from 0 to maximum
+    2. Stage 2: Hold at maximum value for a certain time
+    3. Stage 3: Ramp down from maximum to 0
+    4. Stage 4: Hold at 0
     """
-    max_current = 3000 * d/0.08 * width/6 # 最大电流值
-    
-    # 计算时间段边界
-    t1 = ramp_up_time  # 第一段结束
-    t2 = t1 + max_current_time  # 第二段结束
-    t3 = t2 + ramp_down_time  # 第三段结束
-    
+    max_current = 3000 * d/0.08 * width/6 # Maximum current value
+
+    # Calculate time segment boundaries
+    t1 = ramp_up_time  # End of stage 1
+    t2 = t1 + max_current_time  # End of stage 2
+    t3 = t2 + ramp_down_time  # End of stage 3
+
     if t < t1:
-        # 第一段：从0线性上升到最大值
+        # Stage 1: Linear ramp from 0 to maximum
         current = max_current * (t / ramp_up_time)
     elif t < t2:
-        # 第二段：保持最大值
+        # Stage 2: Hold at maximum
         current = max_current
     elif t < t3:
-        # 第三段：从最大值线性下降到0
+        # Stage 3: Linear ramp down from maximum to 0
         current = max_current * (1 - (t - t2) / ramp_down_time)
     else:
-        # 第四段：保持为0
+        # Stage 4: Hold at 0
         current = 0
-        
+
     return dict(source=current, drain=-current)
 
 
@@ -220,47 +220,47 @@ solution = tdgl.solve(
     use_heat=use_heat
 )
 
-# 提取时间数据
+# Extract time data
 time_data = solution.dynamics.time
 
-# 计算每个时间点的电流值
+# Calculate current values at each time point
 currents = np.array([terminal_currents(t)['source'] for t in time_data])
 
-# 获取电压数据 - 探测点之间的电压差
+# Get voltage data - voltage difference between probe points
 voltage_data = solution.dynamics.mu
 print(f"Voltage data shape: {voltage_data.shape}")
 
-# 正确处理电压数据维度
-# 如果voltage_data的形状是(2, n)，需要转置为(n, 2)
+# Handle voltage data dimensions correctly
+# If voltage_data has shape (2, n), need to transpose to (n, 2)
 if voltage_data.shape[0] == 2 and len(voltage_data.shape) == 2:
-    voltage_data = voltage_data.T  # 转置数据使形状变为(n, 2)
+    voltage_data = voltage_data.T  # Transpose data to make shape (n, 2)
     print(f"Transposed voltage data shape: {voltage_data.shape}")
     voltage_diff = voltage_data[:, 0] - voltage_data[:, 1]
 elif len(voltage_data.shape) == 2 and voltage_data.shape[1] == 2:
-    # 数据已经是(n, 2)形状
+    # Data already has shape (n, 2)
     voltage_diff = voltage_data[:, 0] - voltage_data[:, 1]
 else:
-    # 如果形状是(2, n)以外的形状，尝试直接获取探测点的电压
+    # If shape is not (2, n), try to get probe voltages directly
     print("Trying to use probe voltages directly...")
     probe_voltages = solution.dynamics.mu
-    if len(probe_voltages) == 2:  # 如果有两个序列，每个对应一个探测点
+    if len(probe_voltages) == 2:  # If there are two sequences, each corresponding to a probe point
         voltage_diff = probe_voltages[0] - probe_voltages[1]
     else:
-        # 最后的尝试，直接使用第一个探测点的电压
+        # Last resort, directly use first probe point voltage
         voltage_diff = probe_voltages[0]
-        
-# solution.dynamics.mu是无量纲的，需要乘以电压标度V0得到实际电压
+
+# solution.dynamics.mu is dimensionless, needs to be multiplied by voltage scale V0 to get actual voltage
 try:
-    # 尝试获取电压标度V0
-    V0 = device.V0()  # 电压标度，单位为V
+    # Try to get voltage scale V0
+    V0 = device.V0()  # Voltage scale, in units of V
     print(f"Voltage scale (V0): {V0}")
-    
-    # 将无量纲电压转换为微伏特
+
+    # Convert dimensionless voltage to microvolts
     voltage_scale_uV = V0.to("uV").magnitude
     voltage_diff_uV = voltage_diff * voltage_scale_uV
     voltage_unit = "μV"
 except ValueError:
-    # 如果conductivity未定义，无法获取V0，则使用无量纲数值
+    # If conductivity is not defined, cannot get V0, use dimensionless values
     print("Conductivity not defined. Using dimensionless values for voltage.")
     voltage_diff_uV = voltage_diff
     voltage_unit = "a.u. (dimensionless)"
@@ -268,7 +268,7 @@ except ValueError:
 print(f"Current data shape: {currents.shape}")
 print(f"Voltage difference shape: {voltage_diff.shape}")
 
-# 确保数据长度匹配
+# Ensure data lengths match
 min_length = min(len(currents), len(voltage_diff_uV))
 currents = currents[:min_length]
 voltage_diff_uV = voltage_diff_uV[:min_length]

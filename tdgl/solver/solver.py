@@ -134,13 +134,13 @@ class TDGLSolver:
         # True to use heat disorder, update epsilon according to the self.update_heat_epsilon function.
         self.use_heat = use_heat
         
-        # 检查热扩散参数
+        # Check heat diffusion parameters
         if self.use_heat:
             layer = self.device.layer
             required_params = ['T_0', 'kappa_eff', 'eta', 'C_eff', 'T_heat']
             missing_params = [param for param in required_params if getattr(layer, param) is None]
             if missing_params:
-                raise ValueError(f"启用热功能时，device.layer 中缺少以下参数: {missing_params}")
+                raise ValueError(f"When heat is enabled, the following parameters are missing in device.layer: {missing_params}")
         
         if self.options.gpu:
             assert cupy is not None
@@ -395,41 +395,41 @@ class TDGLSolver:
         Returns:
             Updated epsilon array based on temperature distribution
         """
-        # ===== 从 device.layer 获取热扩散参数 =====
+        # ===== Get heat diffusion parameters from device.layer =====
         layer = self.device.layer
-        T_0 = layer.T_0            # 无量纲临界温度
-        kappa_eff = layer.kappa_eff    # 有效热导率 (无量纲)
-        eta = layer.eta           # 与环境的热交换系数 (无量纲)
-        C_eff = layer.C_eff        # 有效热容 (无量纲)
+        T_0 = layer.T_0            # Dimensionless critical temperature
+        kappa_eff = layer.kappa_eff    # Effective thermal conductivity (dimensionless)
+        eta = layer.eta           # Heat exchange coefficient with environment (dimensionless)
+        C_eff = layer.C_eff        # Effective heat capacity (dimensionless)
         T_heat = layer.T_heat
 
-        # ===== 初始化和预计算 =====
+        # ===== Initialization and precomputation =====
         if step == 0:
-            # 第一次调用时初始化
+            # Initialize on first call
             self.temperature = np.full(len(self.sites), T_0, dtype=np.float64)
             W_total = np.zeros(len(self.sites), dtype=np.float64)
-            # 预计算热扩散矩阵（避免每步重新计算）
+            # Precompute heat diffusion matrix (avoid recalculating every step)
             self.heat_laplacian = self.operators.mu_laplacian * kappa_eff
-            # 初始化边界条件
+            # Initialize boundary conditions
             num_boundary_edges = len(self.device.mesh.edge_mesh.boundary_edge_indices)
             self.T_boundary = np.zeros(num_boundary_edges, dtype=np.float64)
-            # 初始化性能追踪
+            # Initialize performance tracking
             self.last_temp_change = np.inf
         else:
-            # 确保初始化完成
+            # Ensure initialization is complete
             if not hasattr(self, 'temperature'):
                 self.temperature = np.full(len(self.sites), T_0, dtype=np.float64)
                 self.heat_laplacian = self.operators.mu_laplacian * kappa_eff
                 num_boundary_edges = len(self.device.mesh.edge_mesh.boundary_edge_indices)
                 self.T_boundary = np.zeros(num_boundary_edges, dtype=np.float64)
                 self.last_temp_change = np.inf
-            # 获取W_total
+            # Get W_total
             if hasattr(self, 'W_total') and self.W_total is not None:
                 W_total = self.W_total
             else:
                 W_total = np.zeros(len(self.sites), dtype=np.float64)
 
-        # ===== 热扩散计算，支持大dt分步 =====
+        # ===== Heat diffusion calculation, supports large dt with substeps =====
         max_dt = 1e-3
         n_full = int(dt // max_dt)
         dt_remain = dt - n_full * max_dt
@@ -449,45 +449,45 @@ class TDGLSolver:
             if dt_remain > 0:
                 single_heat_step(dt_remain)
 
-        # ===== 计算新的epsilon =====
+        # ===== Calculate new epsilon =====
         epsilon_new = 1 - self.temperature
         return epsilon_new
     
     def _get_boundary_sites(self):
-        """获取边界点的索引（保留此方法用于向后兼容）"""
+        """Get boundary site indices (kept for backwards compatibility)"""
         mesh = self.device.mesh
-        
-        # 使用网格的边界边信息
+
+        # Use mesh boundary edge information
         if hasattr(mesh, 'edge_mesh') and hasattr(mesh.edge_mesh, 'boundary_edge_indices'):
             boundary_edges = mesh.edge_mesh.boundary_edge_indices
             boundary_sites = set()
-            
-            # 从边界边获取边界点
+
+            # Get boundary sites from boundary edges
             for edge_idx in boundary_edges:
                 edge = mesh.edge_mesh.edges[edge_idx]
                 boundary_sites.add(edge[0])
                 boundary_sites.add(edge[1])
-                
+
             return list(boundary_sites)
-        
-        # 备用方法：简单的几何方法
+
+        # Fallback method: simple geometric approach
         sites = mesh.sites
         x_coords = sites[:, 0]
         y_coords = sites[:, 1]
-        
-        # 找到边界上的点
+
+        # Find boundary points
         x_min, x_max = np.min(x_coords), np.max(x_coords)
         y_min, y_max = np.min(y_coords), np.max(y_coords)
-        
+
         tolerance = 1e-10
-        
+
         boundary_mask = (
             (np.abs(x_coords - x_min) < tolerance) |
             (np.abs(x_coords - x_max) < tolerance) |
             (np.abs(y_coords - y_min) < tolerance) |
             (np.abs(y_coords - y_max) < tolerance)
         )
-        
+
         return np.where(boundary_mask)[0]
 
     def update_epsilon(self, time: float) -> np.ndarray:
@@ -910,7 +910,8 @@ class TDGLSolver:
         results = [dt, psi, mu, supercurrent, normal_current, A_induced]
         if self.dynamic_vector_potential:
             results.append(current_A_applied)
-        if self.dynamic_epsilon:
+        # Include epsilon if it's dynamic or if heat is enabled (which makes epsilon dynamic)
+        if self.dynamic_epsilon or self.use_heat:
             results.append(epsilon)
         if self.use_heat:
             results.append(self.W_total)
@@ -963,7 +964,8 @@ class TDGLSolver:
         else:
             fixed_values.append(self.current_A_applied)
             fixed_names.append("applied_vector_potential")
-        if self.dynamic_epsilon:
+        # Treat epsilon as dynamic if it's time-dependent or if heat is enabled
+        if self.dynamic_epsilon or self.use_heat:
             parameters["epsilon"] = self.epsilon
         else:
             fixed_values.append(self.epsilon)

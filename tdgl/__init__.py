@@ -10,9 +10,12 @@ from .solution.data import get_current_through_paths
 from .solution.plot_solution import (
     plot_current_through_paths,
     plot_currents,
+    plot_epsilon,
     plot_field_at_positions,
     plot_order_parameter,
+    plot_order_parameter_current,
     plot_scalar_potential,
+    plot_temperature,
     plot_vorticity,
 )
 from .solution.solution import BiotSavartField, Solution

@@ -35,7 +35,7 @@ class Layer:
         u: float = 5.79,
         gamma: float = 10.0,
         z0: float = 0,
-        # 热扩散参数
+        # Heat diffusion parameters
         T_0: Union[float, None] = None,
         kappa_eff: Union[float, None] = None,
         eta: Union[float, None] = None,
@@ -49,7 +49,7 @@ class Layer:
         self.u = u
         self.gamma = gamma
         self.z0 = z0
-        # 热扩散参数
+        # Heat diffusion parameters
         self.T_0 = T_0
         self.kappa_eff = kappa_eff
         self.eta = eta
@@ -71,7 +71,7 @@ class Layer:
             u=self.u,
             gamma=self.gamma,
             z0=self.z0,
-            # 热扩散参数
+            # Heat diffusion parameters
             T_0=self.T_0,
             kappa_eff=self.kappa_eff,
             eta=self.eta,
@@ -93,35 +93,35 @@ class Layer:
         h5_group.attrs["z0"] = self.z0
         if self.conductivity is not None:
             h5_group.attrs["conductivity"] = self.conductivity
-        # 保存热扩散参数
+        # Save heat diffusion parameters
         if self.T_0 is not None:
-            # 检查 T_0 是否为数组
+            # Check if T_0 is an array
             if hasattr(self.T_0, '__len__') and not isinstance(self.T_0, (str, bytes)):
                 h5_group["T_0"] = self.T_0
             else:
                 h5_group.attrs["T_0"] = self.T_0
         if self.kappa_eff is not None:
-            # 检查 kappa_eff 是否为数组
+            # Check if kappa_eff is an array
             if hasattr(self.kappa_eff, '__len__') and not isinstance(self.kappa_eff, (str, bytes)):
                 h5_group["kappa_eff"] = self.kappa_eff
             else:
                 h5_group.attrs["kappa_eff"] = self.kappa_eff
         if self.eta is not None:
-            # 检查 eta 是否为数组
+            # Check if eta is an array
             if hasattr(self.eta, '__len__') and not isinstance(self.eta, (str, bytes)):
-                # 如果是数组，保存为数据集
+                # If array, save as dataset
                 h5_group["eta"] = self.eta
             else:
-                # 如果是标量，保存为属性
+                # If scalar, save as attribute
                 h5_group.attrs["eta"] = self.eta
         if self.C_eff is not None:
-            # 检查 C_eff 是否为数组
+            # Check if C_eff is an array
             if hasattr(self.C_eff, '__len__') and not isinstance(self.C_eff, (str, bytes)):
                 h5_group["C_eff"] = self.C_eff
             else:
                 h5_group.attrs["C_eff"] = self.C_eff
         if self.T_heat is not None:
-            # 检查 T_heat 是否为数组
+            # Check if T_heat is an array
             if hasattr(self.T_heat, '__len__') and not isinstance(self.T_heat, (str, bytes)):
                 h5_group["T_heat"] = self.T_heat
             else:
@@ -141,7 +141,7 @@ class Layer:
         def get(key, default=None):
             if key in h5_group.attrs:
                 return h5_group.attrs[key]
-            elif key in h5_group:  # 检查是否为数据集
+            elif key in h5_group:  # Check if it's a dataset
                 return h5_group[key][:]
             return default
 
@@ -153,7 +153,7 @@ class Layer:
             u=get("u"),
             gamma=get("gamma"),
             z0=get("z0"),
-            # 热扩散参数
+            # Heat diffusion parameters
             T_0=get("T_0"),
             kappa_eff=get("kappa_eff"),
             eta=get("eta"),
