@@ -296,6 +296,7 @@ def plot_order_parameter_current(
     hole_color: str = "black",
     hole_y_gap: Union[float, None] = None,
     hole_x_gap: Union[float, None] = None,
+    hole_linewidth: float = 2,
     psi_label = "$|\\psi|$",
     **kwargs,
 ) -> Tuple[plt.Figure, plt.Axes]:
@@ -338,6 +339,7 @@ def plot_order_parameter_current(
         hole_color: Color of the hole outline.
         hole_y_gap: Height (y-direction width) of the hole rectangle.
         hole_x_gap: Width (x-direction width) of the hole rectangle.
+        hole_linewidth: Line width of the hole rectangle.
     Returns:
         matplotlib Figure and Axes.
     """
@@ -493,7 +495,7 @@ def plot_order_parameter_current(
             (hole_x_min, hole_y_min), 
             hole_x_gap, 
             hole_y_gap,
-            linewidth=2, 
+            linewidth=hole_linewidth, 
             edgecolor=hole_color, 
             facecolor='none', 
             linestyle='--',

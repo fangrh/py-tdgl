@@ -121,12 +121,22 @@ device = tdgl.Device(
 # Generate mesh
 device.make_mesh(max_edge_length=xi/2, smooth=100)
 
-hole_gap = args.hole_gap
-y_coords = device.mesh.sites[:, 1]
-mask = (y_coords >= -hole_gap) & (y_coords <= hole_gap)
+# Convert hole_gap from physical units (um) to dimensionless units (in xi)
+# device.mesh.sites are in dimensionless units (normalized by xi)
+hole_gap = args.hole_gap  # Physical gap size in um
+hole_gap_dimensionless = hole_gap / xi  # Convert to dimensionless units
+
+y_coords = device.mesh.sites[:, 1]  # Dimensionless coordinates (in units of xi)
+mask = (y_coords >= -hole_gap_dimensionless) & (y_coords <= hole_gap_dimensionless)
 eta_arr = np.full(len(device.mesh.sites), environment_eta)
 eta_arr[mask] = hole_eta
 device.layer.eta = eta_arr
+
+# Print diagnostic info
+print(f"hole_gap (physical): {hole_gap} um")
+print(f"hole_gap (dimensionless): {hole_gap_dimensionless} xi")
+print(f"xi = {xi} um")
+print(f"Number of mesh points in hole region: {np.sum(mask)} / {len(y_coords)} ({100*np.sum(mask)/len(y_coords):.1f}%)")
 
 #%% Define disorder function
 def disorder_function(r, **kwargs):

@@ -437,7 +437,7 @@ class TDGLSolver:
         def single_heat_step(dt_local):
             laplacian_T = self.heat_laplacian @ self.temperature
             source_term = 0.5 * W_total - eta * (self.temperature - T_heat)
-            diffusion_term = kappa_eff * (laplacian_T)
+            diffusion_term = laplacian_T  # kappa_eff already included in heat_laplacian
             dT_dt = (diffusion_term + source_term) / C_eff
             self.temperature += dt_local * dT_dt
 
@@ -998,11 +998,38 @@ class TDGLSolver:
                 if self.use_heat:
                     heat_group = data_handler.tmp_file.create_group("solution/heat_parameters")
                     heat_group.attrs["use_heat"] = self.use_heat
-                    heat_group.attrs["T_0"] = self.device.layer.T_0
-                    heat_group.attrs["kappa_eff"] = self.device.layer.kappa_eff
-                    heat_group.attrs["eta"] = self.device.layer.eta
-                    heat_group.attrs["C_eff"] = self.device.layer.C_eff
-                    heat_group.attrs["T_heat"] = self.device.layer.T_heat
+
+                    # Save scalar parameters as attributes
+                    if self.device.layer.T_0 is not None:
+                        if hasattr(self.device.layer.T_0, '__len__') and not isinstance(self.device.layer.T_0, (str, bytes)):
+                            heat_group["T_0"] = self.device.layer.T_0
+                        else:
+                            heat_group.attrs["T_0"] = self.device.layer.T_0
+
+                    if self.device.layer.kappa_eff is not None:
+                        if hasattr(self.device.layer.kappa_eff, '__len__') and not isinstance(self.device.layer.kappa_eff, (str, bytes)):
+                            heat_group["kappa_eff"] = self.device.layer.kappa_eff
+                        else:
+                            heat_group.attrs["kappa_eff"] = self.device.layer.kappa_eff
+
+                    # Handle eta: can be scalar or array
+                    if self.device.layer.eta is not None:
+                        if hasattr(self.device.layer.eta, '__len__') and not isinstance(self.device.layer.eta, (str, bytes)):
+                            heat_group["eta"] = self.device.layer.eta  # Array -> dataset
+                        else:
+                            heat_group.attrs["eta"] = self.device.layer.eta  # Scalar -> attribute
+
+                    if self.device.layer.C_eff is not None:
+                        if hasattr(self.device.layer.C_eff, '__len__') and not isinstance(self.device.layer.C_eff, (str, bytes)):
+                            heat_group["C_eff"] = self.device.layer.C_eff
+                        else:
+                            heat_group.attrs["C_eff"] = self.device.layer.C_eff
+
+                    if self.device.layer.T_heat is not None:
+                        if hasattr(self.device.layer.T_heat, '__len__') and not isinstance(self.device.layer.T_heat, (str, bytes)):
+                            heat_group["T_heat"] = self.device.layer.T_heat
+                        else:
+                            heat_group.attrs["T_heat"] = self.device.layer.T_heat
             logger.info(
                 f"Simulation started at {start_time}"
                 f" using sparse solver {options.sparse_solver.value!r}"
