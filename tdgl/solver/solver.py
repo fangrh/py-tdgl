@@ -725,9 +725,6 @@ class TDGLSolver:
         array_like
             Total power density
         """
-        # Term 1: 2(∂A/∂t)^2
-        term1 = 2 * (dA_dt * dA_dt)
-        
         # Determine array library (numpy or cupy)
         if isinstance(psi, np.ndarray):
             xp = np
@@ -735,13 +732,24 @@ class TDGLSolver:
             assert cupy is not None
             assert isinstance(psi, cupy.ndarray)
             xp = cupy
-        
+
+        # Term 1: 2(∂A/∂t)^2
+        # Note: dA_dt is defined on edges, but we need term1 on sites
+        # Convert from edge-based to site-based quantity
+        if xp.ndim(dA_dt) == 0:
+            # dA_dt is scalar (no dynamic vector potential)
+            term1 = xp.full(len(self.sites), 2.0 * dA_dt * dA_dt)
+        else:
+            # dA_dt is array on edges, convert to sites first
+            dA_dt_on_site = self.device.mesh.get_quantity_on_site(dA_dt, vector=False, use_cupy=(xp != np))
+            term1 = 2 * (dA_dt_on_site * dA_dt_on_site)
+
         # Calculate ∂ψ/∂t using current and previous psi values
         dpsi_dt = (psi - previous_psi) / dt
-        
+
         # Term 2: (2u/sqrt(1+γ^2|ψ|^2))(|∂ψ/∂t|^2)
         term2 = (2 * self.u / xp.sqrt(1 + self.gamma**2 * abs_sq_psi)) * xp.abs(dpsi_dt)**2
-        
+
         # Term 3: (γ^2/4)(∂|ψ|^2/∂t)^2
         d_abspsisq_dt = (abs_sq_psi - old_sq_psi) / dt
         term3 = (self.gamma**2 / 4) * d_abspsisq_dt**2
