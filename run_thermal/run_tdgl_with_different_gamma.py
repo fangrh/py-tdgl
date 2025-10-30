@@ -32,6 +32,10 @@ parser.add_argument("--width", type=float, default=6.0)
 parser.add_argument("--electride_distance", type=float, default=8.0)
 parser.add_argument("--probe_distance", type=float, default=2.5)
 parser.add_argument("--length", type=float, default=18.0)
+parser.add_argument("--ramp_up_time", type=float, default=5000)
+parser.add_argument("--max_current_time", type=float, default=0)
+parser.add_argument("--ramp_down_time", type=float, default=5000)
+parser.add_argument("--zero_current_time", type=float, default=0)
 args = parser.parse_args() 
 
 
@@ -161,11 +165,11 @@ def disorder_function(r, **kwargs):
 
 
 
-# Define time segments for four-stage current
-ramp_up_time = 5000    # Stage 1: Time to ramp up to maximum
-max_current_time = 0  # Stage 2: Time to hold maximum value
-ramp_down_time = 5000 # Stage 3: Time to ramp down to zero
-zero_current_time = 0  # Stage 4: Time to hold at zero
+# Define time segments for four-stage current (from command line arguments)
+ramp_up_time = args.ramp_up_time    # Stage 1: Time to ramp up to maximum
+max_current_time = args.max_current_time  # Stage 2: Time to hold maximum value
+ramp_down_time = args.ramp_down_time # Stage 3: Time to ramp down to zero
+zero_current_time = args.zero_current_time  # Stage 4: Time to hold at zero
 solve_time = ramp_up_time + max_current_time + ramp_down_time + zero_current_time
 # Define four-stage time-dependent current function
 def terminal_currents(t):
