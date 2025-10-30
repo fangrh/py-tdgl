@@ -753,80 +753,42 @@ class TDGLSolver:
         norm = xp.linalg.norm(directions, axis=1)
         term4 = norm * norm
 
-        # Suppress term4 at non-electrode boundary points to avoid numerical artifacts
-        # Get boundary sites indices (excluding electrode regions)
-        if not hasattr(self, '_non_electrode_boundary_mask'):
+        # Suppress all heat source terms at ALL boundary points to avoid numerical artifacts
+        # This includes electrode boundaries - electrodes act as heat sinks via eta parameter
+        if not hasattr(self, '_boundary_mask'):
             # Cache boundary mask (computed once)
             boundary_sites = self._get_boundary_sites()
-
-            # Identify electrode (terminal) sites based on their geometry
-            # Electrodes are typically at specific y-positions (for horizontal electrodes)
-            # or x-positions (for vertical electrodes)
-            terminal_sites = set()
-
-            if hasattr(self.device, 'terminals') and self.device.terminals:
-                sites_coords = self.sites  # Dimensionless coordinates
-
-                for terminal in self.device.terminals:
-                    # Get terminal polygon bounds in dimensionless units
-                    if hasattr(terminal, 'points') and terminal.points is not None:
-                        # Convert terminal points to dimensionless units
-                        xi = self.device.layer.coherence_length
-                        terminal_points = np.array(terminal.points) / xi
-
-                        # Get bounding box of terminal
-                        x_min, y_min = terminal_points.min(axis=0)
-                        x_max, y_max = terminal_points.max(axis=0)
-
-                        # Add a small tolerance
-                        tolerance = 0.5  # in units of xi
-
-                        # Find sites within terminal region
-                        for idx, site in enumerate(sites_coords):
-                            x, y = site[0], site[1]
-                            if (x_min - tolerance <= x <= x_max + tolerance and
-                                y_min - tolerance <= y <= y_max + tolerance):
-                                terminal_sites.add(idx)
-
-            # Fallback: if no terminals identified, use fixed_sites
-            if not terminal_sites and hasattr(self, 'fixed_sites') and self.fixed_sites:
-                terminal_sites.update(self.fixed_sites)
-
-            # Non-electrode boundary = boundary - terminals
-            non_electrode_boundary = [s for s in boundary_sites if s not in terminal_sites]
 
             # Print diagnostic info (only once)
             import logging
             logger = logging.getLogger(__name__)
             logger.info(f"Total sites: {len(self.sites)}")
             logger.info(f"Boundary sites: {len(boundary_sites)}")
-            logger.info(f"Terminal sites: {len(terminal_sites)}")
-            logger.info(f"Non-electrode boundary sites: {len(non_electrode_boundary)}")
-            logger.info(f"Suppressing heating at {len(non_electrode_boundary)} boundary sites (excluding electrodes)")
+            logger.info(f"Suppressing heating at {len(boundary_sites)} boundary sites (all boundaries)")
 
-            self._non_electrode_boundary_mask = xp.zeros(len(self.sites), dtype=bool)
-            if len(non_electrode_boundary) > 0:
+            self._boundary_mask = xp.zeros(len(self.sites), dtype=bool)
+            if len(boundary_sites) > 0:
                 if xp == np:
-                    self._non_electrode_boundary_mask[non_electrode_boundary] = True
+                    self._boundary_mask[boundary_sites] = True
                 else:
                     # For cupy, need to use array indexing
-                    self._non_electrode_boundary_mask = xp.asarray(self._non_electrode_boundary_mask)
-                    non_electrode_boundary = xp.asarray(non_electrode_boundary)
-                    self._non_electrode_boundary_mask[non_electrode_boundary] = True
+                    self._boundary_mask = xp.asarray(self._boundary_mask)
+                    boundary_sites = xp.asarray(boundary_sites)
+                    self._boundary_mask[boundary_sites] = True
 
-        # Set ALL terms to zero at non-electrode boundary points
-        # This prevents spurious heating at boundaries while keeping electrode heating
+        # Set ALL terms to zero at ALL boundary points
+        # This prevents spurious heating at boundaries (both electrode and non-electrode)
         if xp == np:
-            term1[self._non_electrode_boundary_mask] = 0.0
-            term2[self._non_electrode_boundary_mask] = 0.0
-            term3[self._non_electrode_boundary_mask] = 0.0
-            term4[self._non_electrode_boundary_mask] = 0.0
+            term1[self._boundary_mask] = 0.0
+            term2[self._boundary_mask] = 0.0
+            term3[self._boundary_mask] = 0.0
+            term4[self._boundary_mask] = 0.0
         else:
             # For cupy arrays
-            term1 = xp.where(self._non_electrode_boundary_mask, 0.0, term1)
-            term2 = xp.where(self._non_electrode_boundary_mask, 0.0, term2)
-            term3 = xp.where(self._non_electrode_boundary_mask, 0.0, term3)
-            term4 = xp.where(self._non_electrode_boundary_mask, 0.0, term4)
+            term1 = xp.where(self._boundary_mask, 0.0, term1)
+            term2 = xp.where(self._boundary_mask, 0.0, term2)
+            term3 = xp.where(self._boundary_mask, 0.0, term3)
+            term4 = xp.where(self._boundary_mask, 0.0, term4)
 
         return term1 + term2 + term3 + term4
     
