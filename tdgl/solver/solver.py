@@ -410,9 +410,6 @@ class TDGLSolver:
             W_total = np.zeros(len(self.sites), dtype=np.float64)
             # Precompute heat diffusion matrix (avoid recalculating every step)
             self.heat_laplacian = self.operators.mu_laplacian * kappa_eff
-            # Initialize boundary conditions
-            num_boundary_edges = len(self.device.mesh.edge_mesh.boundary_edge_indices)
-            self.T_boundary = np.zeros(num_boundary_edges, dtype=np.float64)
             # Initialize performance tracking
             self.last_temp_change = np.inf
         else:
@@ -420,8 +417,6 @@ class TDGLSolver:
             if not hasattr(self, 'temperature'):
                 self.temperature = np.full(len(self.sites), T_0, dtype=np.float64)
                 self.heat_laplacian = self.operators.mu_laplacian * kappa_eff
-                num_boundary_edges = len(self.device.mesh.edge_mesh.boundary_edge_indices)
-                self.T_boundary = np.zeros(num_boundary_edges, dtype=np.float64)
                 self.last_temp_change = np.inf
             # Get W_total
             if hasattr(self, 'W_total') and self.W_total is not None:
@@ -819,12 +814,18 @@ class TDGLSolver:
                     non_electrode_boundary = xp.asarray(non_electrode_boundary)
                     self._non_electrode_boundary_mask[non_electrode_boundary] = True
 
-        # Set term4 to zero at non-electrode boundary points
+        # Set ALL terms to zero at non-electrode boundary points
         # This prevents spurious heating at boundaries while keeping electrode heating
         if xp == np:
+            term1[self._non_electrode_boundary_mask] = 0.0
+            term2[self._non_electrode_boundary_mask] = 0.0
+            term3[self._non_electrode_boundary_mask] = 0.0
             term4[self._non_electrode_boundary_mask] = 0.0
         else:
             # For cupy arrays
+            term1 = xp.where(self._non_electrode_boundary_mask, 0.0, term1)
+            term2 = xp.where(self._non_electrode_boundary_mask, 0.0, term2)
+            term3 = xp.where(self._non_electrode_boundary_mask, 0.0, term3)
             term4 = xp.where(self._non_electrode_boundary_mask, 0.0, term4)
 
         return term1 + term2 + term3 + term4
