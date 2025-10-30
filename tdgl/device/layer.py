@@ -23,6 +23,8 @@ class Layer:
         eta: The heat exchange coefficient with environment (dimensionless).
         C_eff: The effective heat capacity (dimensionless).
         T_heat: The environment temperature (dimensionless).
+        suppress_electrode_edge_heating: If True, suppress heating outside electrode regions
+            (y > y_top_electrode or y < y_bottom_electrode). Default is False.
     """
 
     def __init__(
@@ -41,6 +43,7 @@ class Layer:
         eta: Union[float, None] = None,
         C_eff: Union[float, None] = None,
         T_heat: Union[float, None] = None,
+        suppress_electrode_edge_heating: bool = False,
     ):
         self.london_lambda = london_lambda
         self.coherence_length = coherence_length
@@ -55,6 +58,7 @@ class Layer:
         self.eta = eta
         self.C_eff = C_eff
         self.T_heat = T_heat
+        self.suppress_electrode_edge_heating = suppress_electrode_edge_heating
 
     @property
     def Lambda(self) -> float:

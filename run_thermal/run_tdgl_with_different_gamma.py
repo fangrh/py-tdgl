@@ -36,6 +36,7 @@ parser.add_argument("--ramp_up_time", type=float, default=5000)
 parser.add_argument("--max_current_time", type=float, default=0)
 parser.add_argument("--ramp_down_time", type=float, default=5000)
 parser.add_argument("--zero_current_time", type=float, default=0)
+parser.add_argument("--suppress_electrode_edge_heating", type=bool, default=True)
 args = parser.parse_args() 
 
 
@@ -53,11 +54,12 @@ hole_eta = args.hole_eta           # Heat exchange coefficient with environment 
 environment_eta = args.environment_eta           # Heat exchange coefficient with environment (dimensionless)
 C_eff = args.C_eff        # Effective heat capacity (dimensionless)
 T_heat = args.T_heat
+suppress_electrode_edge_heating = args.suppress_electrode_edge_heating
 
-layer = tdgl.Layer(coherence_length=xi, 
-                   london_lambda=london_lambda, 
-                   thickness=d, 
-                   gamma=gamma, 
+layer = tdgl.Layer(coherence_length=xi,
+                   london_lambda=london_lambda,
+                   thickness=d,
+                   gamma=gamma,
                    u=u,
                    conductivity=sigma,
                 #    use_heat=use_heat,
@@ -65,7 +67,8 @@ layer = tdgl.Layer(coherence_length=xi,
                     kappa_eff=kappa_eff,    # Effective thermal conductivity (dimensionless)
                     eta=hole_eta,           # Heat exchange coefficient with environment (dimensionless)
                     C_eff=C_eff,        # Effective heat capacity (dimensionless)
-                    T_heat = T_heat)
+                    T_heat=T_heat,
+                    suppress_electrode_edge_heating=suppress_electrode_edge_heating)
 
 
 # Superconductor disorder parameters
@@ -141,6 +144,11 @@ print(f"hole_gap (physical): {hole_gap} um")
 print(f"hole_gap (dimensionless): {hole_gap_dimensionless} xi")
 print(f"xi = {xi} um")
 print(f"Number of mesh points in hole region: {np.sum(mask)} / {len(y_coords)} ({100*np.sum(mask)/len(y_coords):.1f}%)")
+print(f"suppress_electrode_edge_heating: {suppress_electrode_edge_heating}")
+if suppress_electrode_edge_heating:
+    print("  -> Will suppress heating ONLY outside electrode regions (y > y_top or y < y_bottom)")
+else:
+    print("  -> Will suppress heating at ALL boundaries")
 
 #%% Define disorder function
 def disorder_function(r, **kwargs):

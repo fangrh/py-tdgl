@@ -761,42 +761,92 @@ class TDGLSolver:
         norm = xp.linalg.norm(directions, axis=1)
         term4 = norm * norm
 
-        # Suppress all heat source terms at ALL boundary points to avoid numerical artifacts
-        # This includes electrode boundaries - electrodes act as heat sinks via eta parameter
-        if not hasattr(self, '_boundary_mask'):
-            # Cache boundary mask (computed once)
-            boundary_sites = self._get_boundary_sites()
-
-            # Print diagnostic info (only once)
+        # Suppress heat source terms at boundary points to avoid numerical artifacts
+        # Behavior depends on layer.suppress_electrode_edge_heating:
+        #   False (default): Suppress at ALL boundaries
+        #   True: Suppress only outside electrode regions (y > y_top or y < y_bottom)
+        if not hasattr(self, '_heating_suppression_mask'):
+            # Cache suppression mask (computed once)
             import logging
             logger = logging.getLogger(__name__)
-            logger.info(f"Total sites: {len(self.sites)}")
-            logger.info(f"Boundary sites: {len(boundary_sites)}")
-            logger.info(f"Suppressing heating at {len(boundary_sites)} boundary sites (all boundaries)")
 
-            self._boundary_mask = xp.zeros(len(self.sites), dtype=bool)
-            if len(boundary_sites) > 0:
-                if xp == np:
-                    self._boundary_mask[boundary_sites] = True
+            suppress_mode = self.device.layer.suppress_electrode_edge_heating
+
+            if not suppress_mode:
+                # Mode 1: Suppress at ALL boundary sites
+                boundary_sites = self._get_boundary_sites()
+                logger.info(f"Total sites: {len(self.sites)}")
+                logger.info(f"Boundary sites: {len(boundary_sites)}")
+                logger.info(f"Suppressing heating at {len(boundary_sites)} boundary sites (all boundaries)")
+
+                self._heating_suppression_mask = xp.zeros(len(self.sites), dtype=bool)
+                if len(boundary_sites) > 0:
+                    if xp == np:
+                        self._heating_suppression_mask[boundary_sites] = True
+                    else:
+                        self._heating_suppression_mask = xp.asarray(self._heating_suppression_mask)
+                        boundary_sites = xp.asarray(boundary_sites)
+                        self._heating_suppression_mask[boundary_sites] = True
+            else:
+                # Mode 2: Suppress only outside electrode regions
+                # Find electrode y-bounds
+                y_min_electrode = None
+                y_max_electrode = None
+
+                if hasattr(self.device, 'terminals') and self.device.terminals:
+                    sites_coords = self.sites  # Dimensionless coordinates
+                    xi = self.device.layer.coherence_length
+
+                    for terminal in self.device.terminals:
+                        if hasattr(terminal, 'points') and terminal.points is not None:
+                            # Convert terminal points to dimensionless units
+                            terminal_points = np.array(terminal.points) / xi
+                            y_coords_terminal = terminal_points[:, 1]
+
+                            terminal_y_min = y_coords_terminal.min()
+                            terminal_y_max = y_coords_terminal.max()
+
+                            if y_min_electrode is None or terminal_y_min < y_min_electrode:
+                                y_min_electrode = terminal_y_min
+                            if y_max_electrode is None or terminal_y_max > y_max_electrode:
+                                y_max_electrode = terminal_y_max
+
+                if y_min_electrode is not None and y_max_electrode is not None:
+                    # Identify sites outside electrode regions
+                    y_coords = self.sites[:, 1]
+                    outside_electrodes = (y_coords > y_max_electrode) | (y_coords < y_min_electrode)
+
+                    num_suppressed = xp.sum(outside_electrodes)
+                    logger.info(f"Total sites: {len(self.sites)}")
+                    logger.info(f"Electrode y-range: [{y_min_electrode:.3f}, {y_max_electrode:.3f}] (dimensionless)")
+                    logger.info(f"Suppressing heating at {num_suppressed} sites outside electrode regions")
+
+                    self._heating_suppression_mask = outside_electrodes.astype(bool)
                 else:
-                    # For cupy, need to use array indexing
-                    self._boundary_mask = xp.asarray(self._boundary_mask)
-                    boundary_sites = xp.asarray(boundary_sites)
-                    self._boundary_mask[boundary_sites] = True
+                    # Fallback: no electrodes found, suppress all boundaries
+                    logger.warning("No electrodes found, falling back to suppressing all boundaries")
+                    boundary_sites = self._get_boundary_sites()
+                    self._heating_suppression_mask = xp.zeros(len(self.sites), dtype=bool)
+                    if len(boundary_sites) > 0:
+                        if xp == np:
+                            self._heating_suppression_mask[boundary_sites] = True
+                        else:
+                            self._heating_suppression_mask = xp.asarray(self._heating_suppression_mask)
+                            boundary_sites = xp.asarray(boundary_sites)
+                            self._heating_suppression_mask[boundary_sites] = True
 
-        # Set ALL terms to zero at ALL boundary points
-        # This prevents spurious heating at boundaries (both electrode and non-electrode)
+        # Apply suppression mask
         if xp == np:
-            term1[self._boundary_mask] = 0.0
-            term2[self._boundary_mask] = 0.0
-            term3[self._boundary_mask] = 0.0
-            term4[self._boundary_mask] = 0.0
+            term1[self._heating_suppression_mask] = 0.0
+            term2[self._heating_suppression_mask] = 0.0
+            term3[self._heating_suppression_mask] = 0.0
+            term4[self._heating_suppression_mask] = 0.0
         else:
             # For cupy arrays
-            term1 = xp.where(self._boundary_mask, 0.0, term1)
-            term2 = xp.where(self._boundary_mask, 0.0, term2)
-            term3 = xp.where(self._boundary_mask, 0.0, term3)
-            term4 = xp.where(self._boundary_mask, 0.0, term4)
+            term1 = xp.where(self._heating_suppression_mask, 0.0, term1)
+            term2 = xp.where(self._heating_suppression_mask, 0.0, term2)
+            term3 = xp.where(self._heating_suppression_mask, 0.0, term3)
+            term4 = xp.where(self._heating_suppression_mask, 0.0, term4)
 
         return term1 + term2 + term3 + term4
     
