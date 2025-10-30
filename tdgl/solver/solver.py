@@ -750,12 +750,35 @@ class TDGLSolver:
         # Term 3: (γ^2/4)(∂|ψ|^2/∂t)^2
         d_abspsisq_dt = (abs_sq_psi - old_sq_psi) / dt
         term3 = (self.gamma**2 / 4) * d_abspsisq_dt**2
-        
-        # Term 4:
-        directions = self.device.mesh.get_quantity_on_site(normal_current)
-        norm = np.linalg.norm(directions, axis=1)
+
+        # Term 4: |J_n|^2 (normal current contribution)
+        # Note: At boundary points, this calculation may be unreliable due to
+        # fewer neighboring edges, so we suppress it at boundaries
+        directions = self.device.mesh.get_quantity_on_site(normal_current, use_cupy=(xp != np))
+        norm = xp.linalg.norm(directions, axis=1)
         term4 = norm * norm
-        
+
+        # Suppress term4 at boundary points to avoid numerical artifacts
+        # Get boundary sites indices
+        if not hasattr(self, '_boundary_sites_mask'):
+            # Cache boundary mask (computed once)
+            boundary_sites = self._get_boundary_sites()
+            self._boundary_sites_mask = xp.zeros(len(self.sites), dtype=bool)
+            if xp == np:
+                self._boundary_sites_mask[boundary_sites] = True
+            else:
+                # For cupy, need to use array indexing
+                self._boundary_sites_mask = xp.asarray(self._boundary_sites_mask)
+                boundary_sites = xp.asarray(boundary_sites)
+                self._boundary_sites_mask[boundary_sites] = True
+
+        # Set term4 to zero at boundary points
+        if xp == np:
+            term4[self._boundary_sites_mask] = 0.0
+        else:
+            # For cupy arrays
+            term4 = xp.where(self._boundary_sites_mask, 0.0, term4)
+
         return term1 + term2 + term3 + term4
     
     def update(
