@@ -794,13 +794,13 @@ class TDGLSolver:
                 y_max_electrode = None
 
                 if hasattr(self.device, 'terminals') and self.device.terminals:
-                    sites_coords = self.sites  # Dimensionless coordinates
-                    xi = self.device.layer.coherence_length
+                    # Note: self.sites is in physical units (um), not dimensionless
+                    # self.sites = xi * mesh.sites (see line 173)
 
                     for terminal in self.device.terminals:
                         if hasattr(terminal, 'points') and terminal.points is not None:
-                            # Convert terminal points to dimensionless units
-                            terminal_points = np.array(terminal.points) / xi
+                            # terminal.points is in physical units (um)
+                            terminal_points = np.array(terminal.points)
                             y_coords_terminal = terminal_points[:, 1]
 
                             terminal_y_min = y_coords_terminal.min()
@@ -813,12 +813,13 @@ class TDGLSolver:
 
                 if y_min_electrode is not None and y_max_electrode is not None:
                     # Identify sites outside electrode regions
+                    # Both y_coords and y_min/max_electrode are in physical units (um)
                     y_coords = self.sites[:, 1]
                     outside_electrodes = (y_coords > y_max_electrode) | (y_coords < y_min_electrode)
 
                     num_suppressed = xp.sum(outside_electrodes)
                     logger.info(f"Total sites: {len(self.sites)}")
-                    logger.info(f"Electrode y-range: [{y_min_electrode:.3f}, {y_max_electrode:.3f}] (dimensionless)")
+                    logger.info(f"Electrode y-range: [{y_min_electrode:.3f}, {y_max_electrode:.3f}] um")
                     logger.info(f"Suppressing heating at {num_suppressed} sites outside electrode regions")
 
                     self._heating_suppression_mask = outside_electrodes.astype(bool)
