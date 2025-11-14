@@ -130,3 +130,9 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+
+# Run thermal output files
+run_thermal/*.h5
+run_thermal/*.mp4
+run_thermal/*.npz
+run_thermal/*.png

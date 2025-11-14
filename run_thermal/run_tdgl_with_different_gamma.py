@@ -4,16 +4,29 @@ import sys
 import numpy as np
 import matplotlib.pyplot as plt
 
+# %%
+import argparse
+
+parser = argparse.ArgumentParser()
+parser.add_argument('--use_local_tdgl', action='store_true',
+                    help='Use local development version of tdgl instead of conda environment version')
+
+# Parse known args first to get use_local_tdgl
+args_partial, _ = parser.parse_known_args()
+
+# 根据参数决定是否使用本地 tdgl
+if args_partial.use_local_tdgl:
+    sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+    print("Using LOCAL development version of tdgl")
+
 import tdgl
+print(f"tdgl location: {tdgl.__file__}")
 from tdgl.geometry import box
 from tdgl.visualization.animate import create_animation
 from IPython.display import HTML, display
 import h5py
 
-# %%
-import argparse
-
-parser = argparse.ArgumentParser()
+# Add remaining arguments
 parser.add_argument('--gamma', type=float, default=1.0)
 parser.add_argument('--hole_eta', type=float, default=0.05)
 parser.add_argument('--environment_eta', type=float, default=10.0)
@@ -250,7 +263,8 @@ options = tdgl.SolverOptions(
     include_screening=False,
     max_solve_retries=100,
     adaptive=True,
-    noise_strength=noise_strength
+    noise_strength=noise_strength,
+    terminal_psi=None  # Let terminal regions evolve freely (not fixed to 0)
 )
 
 # Run simulation with zero field, time-dependent current, and disorder
