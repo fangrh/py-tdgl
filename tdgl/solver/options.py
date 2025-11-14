@@ -61,6 +61,11 @@ class SolverOptions:
             step.
         screening_step_size: Step size :math:`\\alpha` for Polyak's method.
         screening_step_drag: Drag parameter :math:`\\beta` for Polyak's method.
+        noise_strength: Strength of the random noise added to the order parameter
+            at each time step. The noise is Gaussian with standard deviation
+            :math:`\\text{noise_strength} \\times \\sqrt{dt}` and is added to
+            the complex order parameter :math:`\\psi` at each mesh site.
+            Set to 0 to disable noise (default).
     """
 
     solve_time: float
@@ -87,6 +92,7 @@ class SolverOptions:
     screening_tolerance: float = 1e-3
     screening_step_size: float = 0.1
     screening_step_drag: float = 0.5
+    noise_strength: float = 0.0
 
     def validate(self) -> None:
         if self.dt_init > self.dt_max:
@@ -120,6 +126,12 @@ class SolverOptions:
             raise SolverOptionsError(
                 "screening_tolerance must be in > 0"
                 f" (got {self.screening_tolerance})."
+            )
+
+        if self.noise_strength < 0:
+            raise SolverOptionsError(
+                "noise_strength must be >= 0"
+                f" (got {self.noise_strength})."
             )
 
         if self.gpu:

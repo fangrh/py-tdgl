@@ -515,6 +515,7 @@ class TDGLSolver:
         u: float,
         dt: float,
         psi_laplacian: sp.spmatrix,
+        noise_strength: float = 0.0,
     ) -> Union[Tuple[np.ndarray, np.ndarray], None]:
         """Solves for :math:`\\psi^{n+1}` and :math:`|\\psi^{n+1}|^2` given
         :math:`\\psi^n` and :math:`\\mu^n`.
@@ -560,6 +561,24 @@ class TDGLSolver:
             return None
         new_sq_psi = (2 * w2) / (two_c_1 + xp.sqrt(discriminant))
         psi = w - z * new_sq_psi
+
+        # Add random noise to the order parameter if noise_strength > 0
+        if noise_strength > 0:
+            # Noise amplitude scales as sqrt(dt) for proper Langevin dynamics
+            noise_amplitude = noise_strength * xp.sqrt(dt)
+            # Generate complex Gaussian noise for each site
+            # Real and imaginary parts are independent Gaussian random variables
+            if xp is np:
+                noise_real = np.random.normal(0, noise_amplitude, size=psi.shape)
+                noise_imag = np.random.normal(0, noise_amplitude, size=psi.shape)
+            else:
+                noise_real = cupy.random.normal(0, noise_amplitude, size=psi.shape)
+                noise_imag = cupy.random.normal(0, noise_amplitude, size=psi.shape)
+            noise = noise_real + 1j * noise_imag
+            psi = psi + noise
+            # Recalculate |psi|^2 after adding noise
+            new_sq_psi = xp.absolute(psi) ** 2
+
         return psi, new_sq_psi
 
     def adaptive_euler_step(
@@ -594,6 +613,7 @@ class TDGLSolver:
             u=self.u,
             dt=dt,
             psi_laplacian=self.operators.psi_laplacian,
+            noise_strength=options.noise_strength,
         )
         result = self.solve_for_psi_squared(**kwargs)
         for retries in itertools.count():
