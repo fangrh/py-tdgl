@@ -76,12 +76,12 @@ layer = tdgl.Layer(coherence_length=xi,
                    gamma=gamma,
                    u=u,
                    conductivity=sigma,
-                   use_heat=use_heat,  # 启用温度保存
                    T_0=T_0,            # Dimensionless critical temperature
                    kappa_eff=kappa_eff,    # Effective thermal conductivity (dimensionless)
                    eta=hole_eta,           # Heat exchange coefficient with environment (dimensionless)
                    C_eff=C_eff,        # Effective heat capacity (dimensionless)
-                   T_heat=T_heat)
+                   T_heat=T_heat,
+                   suppress_electrode_edge_heating=True)
 
 
 # Superconductor disorder parameters

@@ -12,11 +12,15 @@
 #SBATCH --array=0-12
 
 # ============================================
-# CONFIGURATION: Choose tdgl version
+# CONFIGURATION: Choose tdgl version and output options
 # ============================================
 # Set USE_LOCAL_TDGL=1 to use local development version
 # Set USE_LOCAL_TDGL=0 to use conda environment version (default)
 USE_LOCAL_TDGL=0
+
+# Set SAVE_HDF5=1 to save HDF5 output files
+# Set SAVE_HDF5=0 to skip HDF5 saving (default, only saves .npz)
+SAVE_HDF5=0
 
 # Calculate gamma value based on array index
 # Array indices: 0,1,2,3,4,5,6,7,8,9,10
@@ -34,13 +38,23 @@ conda activate tdgl
 # Get start time
 start_time=$(date +%s)
 
-# Build command with optional --use_local_tdgl flag
+# Build command with optional flags
 CMD="python run_tdgl_with_different_gamma.py --T_heat $T_heat --hole_gap 2.5"
+
+# Add --use_local_tdgl flag if enabled
 if [ "$USE_LOCAL_TDGL" -eq 1 ]; then
     CMD="$CMD --use_local_tdgl"
     echo "Using LOCAL development version of tdgl"
 else
     echo "Using conda environment version of tdgl"
+fi
+
+# Add --save_hdf5 flag if enabled
+if [ "$SAVE_HDF5" -eq 1 ]; then
+    CMD="$CMD --save_hdf5"
+    echo "HDF5 output will be saved"
+else
+    echo "HDF5 output will NOT be saved (only .npz)"
 fi
 
 # Run the Python script
