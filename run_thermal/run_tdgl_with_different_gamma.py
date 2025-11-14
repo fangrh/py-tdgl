@@ -29,14 +29,15 @@ parser.add_argument("--sigma", type=float, default=1e3)
 parser.add_argument("--use_heat", type=bool, default=True)
 parser.add_argument("--u", type=float, default=5.79)
 parser.add_argument("--width", type=float, default=6.0)
-parser.add_argument("--electride_distance", type=float, default=8.0)
+parser.add_argument("--electride_distance", type=float, default=18.5)
 parser.add_argument("--probe_distance", type=float, default=2.5)
 parser.add_argument("--length", type=float, default=18.0)
 parser.add_argument("--ramp_up_time", type=float, default=5000)
 parser.add_argument("--max_current_time", type=float, default=0)
 parser.add_argument("--ramp_down_time", type=float, default=5000)
 parser.add_argument("--zero_current_time", type=float, default=0)
-parser.add_argument("--suppress_electrode_edge_heating", type=bool, default=True)
+parser.add_argument("--noise_strength", type=float, default=0.0)
+parser.add_argument("--save_hdf5", action='store_true', help="Save HDF5 file")
 args = parser.parse_args() 
 
 
@@ -54,7 +55,7 @@ hole_eta = args.hole_eta           # Heat exchange coefficient with environment 
 environment_eta = args.environment_eta           # Heat exchange coefficient with environment (dimensionless)
 C_eff = args.C_eff        # Effective heat capacity (dimensionless)
 T_heat = args.T_heat
-suppress_electrode_edge_heating = args.suppress_electrode_edge_heating
+noise_strength = args.noise_strength  # Random noise strength for order parameter
 
 layer = tdgl.Layer(coherence_length=xi,
                    london_lambda=london_lambda,
@@ -62,13 +63,12 @@ layer = tdgl.Layer(coherence_length=xi,
                    gamma=gamma,
                    u=u,
                    conductivity=sigma,
-                #    use_heat=use_heat,
-                    T_0=T_0,            # Dimensionless critical temperature
-                    kappa_eff=kappa_eff,    # Effective thermal conductivity (dimensionless)
-                    eta=hole_eta,           # Heat exchange coefficient with environment (dimensionless)
-                    C_eff=C_eff,        # Effective heat capacity (dimensionless)
-                    T_heat=T_heat,
-                    suppress_electrode_edge_heating=suppress_electrode_edge_heating)
+                   use_heat=use_heat,  # 启用温度保存
+                   T_0=T_0,            # Dimensionless critical temperature
+                   kappa_eff=kappa_eff,    # Effective thermal conductivity (dimensionless)
+                   eta=hole_eta,           # Heat exchange coefficient with environment (dimensionless)
+                   C_eff=C_eff,        # Effective heat capacity (dimensionless)
+                   T_heat=T_heat)
 
 
 # Superconductor disorder parameters
@@ -83,15 +83,6 @@ length = args.length  # total length
 electride_distance = args.electride_distance  # Distance of superconductor from endpoints
 extend = (length-electride_distance)/2  # Extension length at both ends
 
-# Create internal electrodes (no longer at endpoints)
-terminal_width = width+2  # Electrode width
-terminal_thickness = 1  # Electrode thickness
-
-# Calculate electrode positions so both ends extend by length 'extend'
-top_terminal_y = length/2 - extend - terminal_thickness/2  # Top electrode y-coordinate
-bottom_terminal_y = -top_terminal_y  # Bottom electrode y-coordinate (symmetric position)
-
-
 # Create the superconducting film (single piece)
 film = (
     tdgl.Polygon("film", points=box(width, length))
@@ -99,6 +90,17 @@ film = (
     .buffer(0.01)
 )
 
+# Add probe points for voltage measurement (between terminals)
+# Fixed probe point positions at y=probe_distance and y=-probe_distance
+probe_points = [(0, args.probe_distance), (0, -args.probe_distance)]  # Fixed position probe points
+
+# Create internal electrodes (no longer at endpoints)
+terminal_width = width+2  # Electrode width
+terminal_thickness = 1  # Electrode thickness
+
+# Calculate electrode positions so both ends extend by length 'extend'
+top_terminal_y = length/2 - extend - terminal_thickness/2  # Top electrode y-coordinate
+bottom_terminal_y = -top_terminal_y  # Bottom electrode y-coordinate (symmetric position)
 
 # Create current terminals
 source = (
@@ -109,10 +111,6 @@ drain = (
     tdgl.Polygon("drain", points=box(terminal_width, terminal_thickness))
     .translate(dy=bottom_terminal_y)  # Located at bottom, but not at endpoint
 )
-
-# Add probe points for voltage measurement (between terminals)
-# Fixed probe point positions at y=probe_distance and y=-probe_distance
-probe_points = [(0, args.probe_distance), (0, -args.probe_distance)]  # Fixed position probe points
 
 
 #%% Create device and generate mesh
@@ -144,11 +142,11 @@ print(f"hole_gap (physical): {hole_gap} um")
 print(f"hole_gap (dimensionless): {hole_gap_dimensionless} xi")
 print(f"xi = {xi} um")
 print(f"Number of mesh points in hole region: {np.sum(mask)} / {len(y_coords)} ({100*np.sum(mask)/len(y_coords):.1f}%)")
-print(f"suppress_electrode_edge_heating: {suppress_electrode_edge_heating}")
-if suppress_electrode_edge_heating:
-    print("  -> Will suppress heating ONLY outside electrode regions (y > y_top or y < y_bottom)")
+print(f"noise_strength: {noise_strength}")
+if noise_strength > 0:
+    print(f"  -> Random noise will be added to order parameter (amplitude ∝ noise_strength × √dt)")
 else:
-    print("  -> Will suppress heating at ALL boundaries")
+    print(f"  -> No noise (deterministic simulation)")
 
 #%% Define disorder function
 def disorder_function(r, **kwargs):
@@ -210,16 +208,49 @@ def terminal_currents(t):
     return dict(source=current, drain=-current)
 
 
+# Generate filename based on non-default parameters
+def generate_filename(args, parser):
+    """Generate filename based on parameters that differ from defaults."""
+    # Get default values
+    defaults = {}
+    for action in parser._actions:
+        if action.dest != 'help' and action.dest != 'save_hdf5':
+            defaults[action.dest] = action.default
+
+    # Find non-default parameters
+    non_defaults = []
+    for key, default_value in defaults.items():
+        current_value = getattr(args, key)
+        if current_value != default_value:
+            # Format the parameter name and value
+            non_defaults.append(f"{key}_{current_value}")
+
+    if non_defaults:
+        filename = "_".join(non_defaults)
+    else:
+        filename = "default_run"
+
+    return filename
+
+# Generate output filename
+if args.save_hdf5:
+    output_filename = generate_filename(args, parser) + ".h5"
+    print(f"\nHDF5 output will be saved to: {output_filename}")
+else:
+    output_filename = None
+    print(f"\nHDF5 output: Not saving (use --save_hdf5 to enable)")
+
 options = tdgl.SolverOptions(
     solve_time=solve_time,
-    # output_file="disorder_strip_iv_curve.h5",
+    output_file=output_filename,
     field_units="mT",
     current_units="uA",
     dt_max=1e-2,
-    # save_every=50,  # Save more frequently for smoother animation
+    # save_every=100,  # Save more frequently for smoother animation
     include_screening=False,
     max_solve_retries=100,
-    adaptive=True
+    adaptive=True,
+    noise_strength=noise_strength
 )
 
 # Run simulation with zero field, time-dependent current, and disorder
@@ -285,31 +316,35 @@ min_length = min(len(currents), len(voltage_diff_uV))
 currents = currents[:min_length]
 voltage_diff_uV = voltage_diff_uV[:min_length]
 
+# Generate npz filename using same logic as HDF5 filename
+npz_filename = generate_filename(args, parser) + ".npz"
+print(f"\nSaving results to: {npz_filename}")
 
-np.savez(f"gamma{gamma}_holeeta{hole_eta}_environmenteta{environment_eta}_Theat{T_heat}_d{d}_xi{xi}_londonlambda{london_lambda}_sigma{sigma}_u{u}_useheat{use_heat}_T0{T_0}_kappaeff{kappa_eff}_Ceff{C_eff}_width{width}_holegap{hole_gap}_electride_distance{electride_distance}_probe_distance{args.probe_distance}_length{args.length}.npz", 
-         time=time_data, 
-         currents=currents, 
-         voltages=voltage_diff_uV, 
-         gamma=gamma, 
-         d=d, 
-         u=u, 
-         sigma=sigma, 
-         xi=xi, 
-         london_lambda=london_lambda, 
-         use_heat=use_heat, 
-         T_0=T_0, 
-         kappa_eff=kappa_eff, 
-         hole_eta=hole_eta, 
-         environment_eta=environment_eta, 
-         C_eff=C_eff, 
-         T_heat=T_heat, 
-         width=width, 
-         hole_gap=hole_gap, 
+np.savez(npz_filename,
+         time=time_data,
+         currents=currents,
+         voltages=voltage_diff_uV,
+         gamma=gamma,
+         d=d,
+         u=u,
+         sigma=sigma,
+         xi=xi,
+         london_lambda=london_lambda,
+         use_heat=use_heat,
+         T_0=T_0,
+         kappa_eff=kappa_eff,
+         hole_eta=hole_eta,
+         environment_eta=environment_eta,
+         C_eff=C_eff,
+         T_heat=T_heat,
+         width=width,
+         hole_gap=hole_gap,
          electride_distance=electride_distance,
          probe_distance=args.probe_distance,
          length=args.length,
-         ramp_up_time=ramp_up_time, 
-         max_current_time=max_current_time, 
-         ramp_down_time=ramp_down_time, 
-         zero_current_time=zero_current_time, 
-         solve_time=solve_time)
+         ramp_up_time=ramp_up_time,
+         max_current_time=max_current_time,
+         ramp_down_time=ramp_down_time,
+         zero_current_time=zero_current_time,
+         solve_time=solve_time,
+         noise_strength=noise_strength)
