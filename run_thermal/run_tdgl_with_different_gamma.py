@@ -50,6 +50,7 @@ parser.add_argument("--max_current_time", type=float, default=0)
 parser.add_argument("--ramp_down_time", type=float, default=5000)
 parser.add_argument("--zero_current_time", type=float, default=0)
 parser.add_argument("--noise_strength", type=float, default=0.0)
+parser.add_argument("--save_every", type=int, default=1000, help="Save data every N steps")
 parser.add_argument("--save_hdf5", action='store_true', help="Save HDF5 file")
 args = parser.parse_args() 
 
@@ -259,7 +260,7 @@ options = tdgl.SolverOptions(
     field_units="mT",
     current_units="uA",
     dt_max=1e-2,
-    # save_every=100,  # Save more frequently for smoother animation
+    save_every=args.save_every,  # Save data every N steps
     include_screening=False,
     max_solve_retries=100,
     adaptive=True,
