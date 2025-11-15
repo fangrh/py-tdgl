@@ -22,7 +22,7 @@ import re
 # 时间范围
 TIME_START = 0
 TIME_END = 8000
-# TIME_STEP will be auto-detected from filename or default to 1000
+# TIME_STEP = 10 (视频帧采样间隔，在主函数中设置)
 
 # 输出设置
 FPS = 10
