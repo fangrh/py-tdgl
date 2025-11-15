@@ -79,9 +79,18 @@ PLOT_DPSI_DT = False        # Plot |dψ/dt|
 #SBATCH --time=10:00:00     # Maximum time limit
 ```
 
-### Conda Environment
+### Conda Environment and FFmpeg Installation
 
-The script uses `conda activate tdgl` to activate the conda environment, matching the setup used in `run.sh`. Make sure conda is properly initialized in your shell environment (typically via `.bashrc` or system configuration).
+The script uses `conda activate tdgl` to activate the conda environment.
+
+**Important: Install ffmpeg in your conda environment:**
+
+```bash
+conda activate tdgl
+conda install -c conda-forge ffmpeg
+```
+
+This installs ffmpeg directly in your tdgl conda environment, avoiding conflicts with system modules.
 
 ## Example
 
@@ -111,10 +120,17 @@ Make sure you're in the correct directory with `.h5` files.
 Reduce `NUM_WORKERS` or increase `--mem` in `generate_video.sh`.
 
 ### FFmpeg not found
-Load the appropriate module or install ffmpeg:
+Install ffmpeg in your conda environment (recommended):
 ```bash
-module load ffmpeg  # On most clusters
+conda activate tdgl
+conda install -c conda-forge ffmpeg
 ```
+
+Alternatively, if your cluster requires using modules:
+```bash
+module load ffmpeg
+```
+Note: Installing via conda is preferred to avoid environment conflicts.
 
 ### Disk quota exceeded
 - Reduce `TIME_STEP` to generate fewer frames

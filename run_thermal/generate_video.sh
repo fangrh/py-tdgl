@@ -19,11 +19,8 @@ echo "Array Job ID: $SLURM_ARRAY_JOB_ID"
 echo "Array Task ID: $SLURM_ARRAY_TASK_ID"
 echo "CPUs: $SLURM_CPUS_PER_TASK"
 
-# Activate the conda environment first
+# Activate the conda environment
 conda activate tdgl
-
-# Then load ffmpeg module (after conda environment is active)
-module load ffmpeg
 
 # Get start time
 start_time=$(date +%s)
