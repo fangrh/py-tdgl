@@ -9,24 +9,20 @@
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=32G
-#SBATCH --array=0-12
+#SBATCH --array=0-8
 
 # ============================================
-# CONFIGURATION: Choose tdgl version and output options
+# CONFIGURATION: Choose tdgl version
 # ============================================
 # Set USE_LOCAL_TDGL=1 to use local development version
 # Set USE_LOCAL_TDGL=0 to use conda environment version (default)
-USE_LOCAL_TDGL=0
-
-# Set SAVE_HDF5=1 to save HDF5 output files
-# Set SAVE_HDF5=0 to skip HDF5 saving (default, only saves .npz)
-SAVE_HDF5=0
+USE_LOCAL_TDGL=1
 
 # Calculate gamma value based on array index
 # Array indices: 0,1,2,3,4,5,6,7,8,9,10
 # Gamma values: 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9
-T_heat_values=(0.01 0.05 0.1 0.2 0.3 0.4 0.5 0.6 0.7 0.8 0.9 1.0)
-T_heat=${T_heat_values[$SLURM_ARRAY_TASK_ID]}
+hole_gap_values=(0.0 0.1 0.2 0.25 0.5 0.8 1.0 1.5 2.0)
+hole_gap=${hole_gap_values[$SLURM_ARRAY_TASK_ID]}
 
 echo "Starting job $SLURM_ARRAY_TASK_ID with T_heat = $T_heat"
 echo "Job ID: $SLURM_JOB_ID"
@@ -38,38 +34,5 @@ conda activate tdgl
 # Get start time
 start_time=$(date +%s)
 
-# Build command with optional flags
-CMD="python run_tdgl_with_different_gamma.py --T_heat $T_heat --hole_gap 2.5"
-
-# Add --use_local_tdgl flag if enabled
-if [ "$USE_LOCAL_TDGL" -eq 1 ]; then
-    CMD="$CMD --use_local_tdgl"
-    echo "Using LOCAL development version of tdgl"
-else
-    echo "Using conda environment version of tdgl"
-fi
-
-# Add --save_hdf5 flag if enabled
-if [ "$SAVE_HDF5" -eq 1 ]; then
-    CMD="$CMD --save_hdf5"
-    echo "HDF5 output will be saved"
-else
-    echo "HDF5 output will NOT be saved (only .npz)"
-fi
-
-# Run the Python script
-echo "Running: $CMD"
-$CMD
-
-# Get end time and calculate duration
-end_time=$(date +%s)
-duration=$((end_time - start_time))
-
-# Convert seconds to hours, minutes, seconds
-hours=$((duration / 3600))
-minutes=$(( (duration % 3600) / 60 ))
-seconds=$((duration % 60))
-
-echo "Total runtime: ${hours}h ${minutes}m ${seconds}s"
-
-echo "Completed job $SLURM_ARRAY_TASK_ID with T_heat = $T_heat" 
+# Build command with optional --use_local_tdgl flag
+python run_tdgl_with_different_gamma.py --hole_gap $hole_gap --ramp_up_time 4000 --ramp_down_time 4000 --save_hdf5
