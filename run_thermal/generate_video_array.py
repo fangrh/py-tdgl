@@ -265,14 +265,11 @@ def plot_single_frame(args):
     # 找到当前时间对应的数据
     idx = np.argmin(np.abs(time_data - t0))
 
-    # 找到最接近的 solve step
-    time_diffs = [abs(time_data[available_steps.index(s)] - t0) for s in available_steps]
-    step_idx = np.argmin(time_diffs)
-    step_current = available_steps[step_idx]
-
     # 按需加载当前时间步的 psi 和 temperature
     solution = tdgl.Solution.from_hdf5(hdf_file)
 
+    # 使用 tdgl 内置的方法找到最接近 t0 的 solve step
+    step_current = solution.closest_solve_step(t0)
     solution.solve_step = step_current
     psi = solution.tdgl_data.psi.copy()
 
