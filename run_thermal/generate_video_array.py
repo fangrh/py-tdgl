@@ -357,34 +357,26 @@ def plot_single_frame(args):
     # 创建一个横跨所有列的子图
     ax_iv = fig.add_subplot(gs[field_nrows, :])
 
-    # 创建双y轴
-    ax1 = ax_iv
-    ax2 = ax1.twinx()
+    # 绘制I-V曲线（横轴：电流，纵轴：电压）
+    ax_iv.plot(currents_uA, voltage_diff_uV, 'k-', linewidth=2, alpha=0.7, label='I-V Curve')
 
-    # 绘制电流曲线（左y轴，蓝色）
-    line1 = ax1.plot(time_data, currents_uA, 'b-', linewidth=1.5, alpha=0.6, label='Current')
-    point1 = ax1.scatter([t0], [currents_uA[idx]], c='blue', s=150, zorder=5,
-                         edgecolors='white', linewidths=2, marker='o')
-    ax1.set_xlabel('Time', fontsize=12, fontweight='bold')
-    ax1.set_ylabel(f'Current ({current_unit})', fontsize=11, color='blue', fontweight='bold')
-    ax1.tick_params(axis='y', labelcolor='blue')
+    # 标记当前时间点
+    ax_iv.scatter([currents_uA[idx]], [voltage_diff_uV[idx]], c='red', s=200, zorder=5,
+                  edgecolors='white', linewidths=2.5, marker='o',
+                  label=f't = {t0:.1f}')
 
-    # 绘制电压曲线（右y轴，红色）
-    line2 = ax2.plot(time_data, voltage_diff_uV, 'r-', linewidth=1.5, alpha=0.6, label='Voltage')
-    point2 = ax2.scatter([t0], [voltage_diff_uV[idx]], c='red', s=150, zorder=5,
-                         edgecolors='white', linewidths=2, marker='o')
-    ax2.set_ylabel(f'Voltage ({voltage_unit})', fontsize=11, color='red', fontweight='bold')
-    ax2.tick_params(axis='y', labelcolor='red')
+    # 设置标签和标题
+    ax_iv.set_xlabel(f'Current ({current_unit})', fontsize=12, fontweight='bold')
+    ax_iv.set_ylabel(f'Voltage ({voltage_unit})', fontsize=12, fontweight='bold')
+    ax_iv.set_title('I-V Curve', fontsize=13, fontweight='bold', pad=10)
 
-    # 添加网格和标题
-    ax1.grid(True, alpha=0.3, linestyle='--')
-    ax1.set_title(f'Current-Voltage vs Time (t = {t0:.1f})', fontsize=13, fontweight='bold', pad=10)
+    # 添加网格和图例
+    ax_iv.grid(True, alpha=0.3, linestyle='--')
+    ax_iv.legend(fontsize=11, loc='best')
 
-    # 添加垂直线标记当前时间
-    ax1.axvline(x=t0, color='gray', linestyle='--', linewidth=1.5, alpha=0.7)
-
-    # 设置x轴范围，确保显示所有数据
-    ax1.set_xlim(time_data.min(), time_data.max())
+    # 设置坐标轴范围
+    ax_iv.set_xlim(currents_uA.min() * 0.95, currents_uA.max() * 1.05)
+    ax_iv.set_ylim(voltage_diff_uV.min() * 0.95, voltage_diff_uV.max() * 1.05)
 
     # 保存帧
     frame_file = os.path.join(temp_dir, f"frame_{frame_idx:05d}.png")
