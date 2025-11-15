@@ -397,8 +397,11 @@ if __name__ == "__main__":
     # 获取当前任务要处理的.h5文件
     HDF_FILE = get_current_h5_file()
 
-    # 从文件名检测save_every参数，用作TIME_STEP
-    TIME_STEP = detect_save_every_from_filename(HDF_FILE)
+    # TIME_STEP 默认为 10（视频帧采样间隔）
+    TIME_STEP = 10
+
+    # 从文件名检测save_every参数（HDF5文件中I-V曲线数据的原始采样间隔）
+    IV_SAMPLING_STEP = detect_save_every_from_filename(HDF_FILE)
 
     # 生成输出文件名（去掉.h5扩展名，加上_video.mp4）
     OUTPUT_VIDEO = HDF_FILE.replace('.h5', '_video.mp4')
@@ -409,7 +412,8 @@ if __name__ == "__main__":
     print("="*60)
     print(f"SLURM_ARRAY_TASK_ID: {os.environ.get('SLURM_ARRAY_TASK_ID', 0)}")
     print(f"输入文件: {HDF_FILE}")
-    print(f"时间范围: {TIME_START} - {TIME_END}, 步长={TIME_STEP}")
+    print(f"视频帧时间步长: {TIME_STEP} (范围: {TIME_START} - {TIME_END})")
+    print(f"I-V曲线数据采样间隔 (save_every): {IV_SAMPLING_STEP}")
     print(f"输出视频: {OUTPUT_VIDEO}")
     print(f"临时目录: {TEMP_DIR}")
     print(f"FPS: {FPS}, DPI: {DPI}")
