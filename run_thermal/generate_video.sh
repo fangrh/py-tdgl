@@ -19,8 +19,15 @@ echo "Array Job ID: $SLURM_ARRAY_JOB_ID"
 echo "Array Task ID: $SLURM_ARRAY_TASK_ID"
 echo "CPUs: $SLURM_CPUS_PER_TASK"
 
+# Initialize conda for bash shell
+eval "$(conda shell.bash hook)"
+
 # Activate the conda environment
 conda activate tdgl
+
+# Verify Python and packages are available
+echo "Python: $(which python)"
+echo "Python version: $(python --version)"
 
 # Get start time
 start_time=$(date +%s)

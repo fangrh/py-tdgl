@@ -79,6 +79,10 @@ PLOT_DPSI_DT = False        # Plot |dψ/dt|
 #SBATCH --time=10:00:00     # Maximum time limit
 ```
 
+### Conda Environment
+
+The script uses `eval "$(conda shell.bash hook)"` to properly initialize conda in the SLURM environment before activating the `tdgl` environment. This ensures all Python packages are available.
+
 ## Example
 
 If you have 9 `.h5` files in your directory:
