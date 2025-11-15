@@ -81,7 +81,7 @@ PLOT_DPSI_DT = False        # Plot |dψ/dt|
 
 ### Conda Environment
 
-The script uses `eval "$(conda shell.bash hook)"` to properly initialize conda in the SLURM environment before activating the `tdgl` environment. This ensures all Python packages are available.
+The script uses `conda activate tdgl` to activate the conda environment, matching the setup used in `run.sh`. Make sure conda is properly initialized in your shell environment (typically via `.bashrc` or system configuration).
 
 ## Example
 
