@@ -33,11 +33,11 @@ FIGSIZE = (16, 10)
 NUM_WORKERS = int(os.environ.get('SLURM_CPUS_PER_TASK', cpu_count()))
 
 # 绘图选项
-PLOT_ORDER = True
-PLOT_EPSILON = False
-PLOT_TEMPERATURE = True
-PLOT_PHASE = True
-PLOT_DPSI_DT = False
+PLOT_ORDER = True          # |ψ| - 序参量幅度
+PLOT_EPSILON = True        # ε - 无序参数
+PLOT_TEMPERATURE = True    # T - 温度场
+PLOT_PHASE = True          # φ - 相位
+PLOT_DPSI_DT = False       # |dψ/dt| - 时间导数（计算较慢）
 
 # 物理参数
 XI = 0.25  # coherence length (um)
