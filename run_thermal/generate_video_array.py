@@ -16,12 +16,13 @@ import h5py
 import subprocess
 import shutil
 import glob
+import re
 
 #%% ========== 参数设置 ==========
 # 时间范围
 TIME_START = 0
 TIME_END = 8000
-TIME_STEP = 50  # 增大步长以减少总帧数
+# TIME_STEP will be auto-detected from filename or default to 1000
 
 # 输出设置
 FPS = 10
@@ -61,6 +62,25 @@ def get_current_h5_file():
         raise ValueError(f"SLURM_ARRAY_TASK_ID ({array_task_id}) 超出.h5文件数量 ({len(h5_files)})")
 
     return h5_files[array_task_id]
+
+def detect_save_every_from_filename(filename):
+    """
+    从文件名中检测save_every参数
+    查找 'save_every_XXX' 模式，如果没有找到则返回默认值1000
+
+    Example:
+        'hole_gap_0.5_save_every_500.h5' -> 500
+        'hole_gap_0.5.h5' -> 1000
+    """
+    # 使用正则表达式查找 save_every_数字 模式
+    match = re.search(r'save_every_(\d+)', filename)
+    if match:
+        save_every = int(match.group(1))
+        print(f"检测到 save_every 参数从文件名: {save_every}")
+        return save_every
+    else:
+        print(f"文件名中未找到 save_every 参数，使用默认值: 1000")
+        return 1000
 
 #%% ========== 加载数据函数 ==========
 def load_all_data(hdf_file):
@@ -377,6 +397,9 @@ def plot_single_frame(args):
 if __name__ == "__main__":
     # 获取当前任务要处理的.h5文件
     HDF_FILE = get_current_h5_file()
+
+    # 从文件名检测save_every参数，用作TIME_STEP
+    TIME_STEP = detect_save_every_from_filename(HDF_FILE)
 
     # 生成输出文件名（去掉.h5扩展名，加上_video.mp4）
     OUTPUT_VIDEO = HDF_FILE.replace('.h5', '_video.mp4')
