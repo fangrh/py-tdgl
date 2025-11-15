@@ -19,6 +19,8 @@ echo "Array Job ID: $SLURM_ARRAY_JOB_ID"
 echo "Array Task ID: $SLURM_ARRAY_TASK_ID"
 echo "CPUs: $SLURM_CPUS_PER_TASK"
 
+module load ffmpeg
+
 # Activate the conda environment
 conda activate tdgl
 
