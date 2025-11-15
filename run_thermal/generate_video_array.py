@@ -276,6 +276,19 @@ def plot_single_frame(args):
     solution.solve_step = step_current
     psi = solution.tdgl_data.psi.copy()
 
+    # 动态加载 epsilon 和 temperature（如果HDF5中有的话）
+    try:
+        epsilon_current = solution.tdgl_data.epsilon.copy()
+    except (AttributeError, KeyError):
+        # 如果HDF5中没有epsilon数据，使用静态的epsilon_data
+        epsilon_current = epsilon_data
+
+    try:
+        temperature_current = solution.tdgl_data.temperature.copy()
+    except (AttributeError, KeyError):
+        # 如果HDF5中没有temperature数据，计算为 1 - epsilon
+        temperature_current = 1.0 - epsilon_current
+
     # 准备网格
     x = device_points[:, 0] / XI
     y = device_points[:, 1] / XI
@@ -309,10 +322,10 @@ def plot_single_frame(args):
 
     if PLOT_EPSILON:
         ax = fig.add_subplot(gs[plot_idx // ncols, plot_idx % ncols])
-        tc = ax.tripcolor(x, y, triangles, epsilon_data, cmap='RdBu_r',
+        tc = ax.tripcolor(x, y, triangles, epsilon_current, cmap='RdBu_r',
                          vmin=EPSILON_VMIN, vmax=EPSILON_VMAX, shading='gouraud')
         ax.set_aspect('equal')
-        ax.set_title(r'Disorder $\epsilon$', fontsize=11)
+        ax.set_title(r'Disorder $\epsilon$ at t={:.1f}'.format(t0), fontsize=11)
         ax.set_xlabel(r'$x/\xi$')
         ax.set_ylabel(r'$y/\xi$')
         plt.colorbar(tc, ax=ax, label=r'$\epsilon$')
@@ -320,9 +333,7 @@ def plot_single_frame(args):
 
     if PLOT_TEMPERATURE:
         ax = fig.add_subplot(gs[plot_idx // ncols, plot_idx % ncols])
-        # Calculate temperature as 1 - epsilon
-        temperature = 1.0 - epsilon_data
-        tc = ax.tripcolor(x, y, triangles, temperature, cmap='hot',
+        tc = ax.tripcolor(x, y, triangles, temperature_current, cmap='hot',
                          vmin=TEMPERATURE_VMIN, vmax=TEMPERATURE_VMAX, shading='gouraud')
         ax.set_aspect('equal')
         ax.set_title(f'Temperature at t={t0:.1f}', fontsize=11)
