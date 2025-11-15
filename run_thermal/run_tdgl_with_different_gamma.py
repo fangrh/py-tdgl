@@ -42,9 +42,9 @@ parser.add_argument("--sigma", type=float, default=1e3)
 parser.add_argument("--use_heat", type=bool, default=True)
 parser.add_argument("--u", type=float, default=5.79)
 parser.add_argument("--width", type=float, default=6.0)
-parser.add_argument("--electride_distance", type=float, default=10.5)
-parser.add_argument("--probe_distance", type=float, default=2.5)
 parser.add_argument("--length", type=float, default=10.0)
+parser.add_argument("--electride_distance", type=float, default=None)  # Will be set to length+0.5 if not specified
+parser.add_argument("--probe_distance", type=float, default=2.5)
 parser.add_argument("--ramp_up_time", type=float, default=5000)
 parser.add_argument("--max_current_time", type=float, default=0)
 parser.add_argument("--ramp_down_time", type=float, default=5000)
@@ -52,8 +52,11 @@ parser.add_argument("--zero_current_time", type=float, default=0)
 parser.add_argument("--noise_strength", type=float, default=0.0)
 parser.add_argument("--save_every", type=int, default=1000, help="Save data every N steps")
 parser.add_argument("--save_hdf5", action='store_true', help="Save HDF5 file")
-args = parser.parse_args() 
+args = parser.parse_args()
 
+# Set electride_distance default to length + 0.5 if not specified
+if args.electride_distance is None:
+    args.electride_distance = args.length + 0.5
 
 length_units = "um"
 xi = args.xi  # coherence length   
