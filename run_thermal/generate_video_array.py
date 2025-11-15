@@ -35,9 +35,19 @@ NUM_WORKERS = int(os.environ.get('SLURM_CPUS_PER_TASK', cpu_count()))
 # 绘图选项
 PLOT_ORDER = True          # |ψ| - 序参量幅度
 PLOT_EPSILON = True        # ε - 无序参数
-PLOT_TEMPERATURE = True    # T - 温度场
+PLOT_TEMPERATURE = True    # T - 温度场 (计算为 1-ε)
 PLOT_PHASE = True          # φ - 相位
 PLOT_DPSI_DT = False       # |dψ/dt| - 时间导数（计算较慢）
+
+# 颜色范围设置 (None = 自动)
+ORDER_VMIN = 0.0           # |ψ| 最小值
+ORDER_VMAX = 1.0           # |ψ| 最大值
+EPSILON_VMIN = 0.0         # ε 最小值
+EPSILON_VMAX = 1.0         # ε 最大值
+TEMPERATURE_VMIN = 0.0     # T 最小值
+TEMPERATURE_VMAX = 1.0     # T 最大值
+PHASE_VMIN = -3.14159      # φ 最小值 (-π)
+PHASE_VMAX = 3.14159       # φ 最大值 (+π)
 
 # 物理参数
 XI = 0.25  # coherence length (um)
@@ -265,10 +275,6 @@ def plot_single_frame(args):
 
     solution.solve_step = step_current
     psi = solution.tdgl_data.psi.copy()
-    try:
-        temperature = solution.tdgl_data.temperature.copy()
-    except:
-        temperature = None
 
     # 准备网格
     x = device_points[:, 0] / XI
@@ -292,7 +298,8 @@ def plot_single_frame(args):
     # 绘制场分布
     if PLOT_ORDER:
         ax = fig.add_subplot(gs[plot_idx // ncols, plot_idx % ncols])
-        tc = ax.tripcolor(x, y, triangles, np.abs(psi), cmap='viridis', shading='gouraud')
+        tc = ax.tripcolor(x, y, triangles, np.abs(psi), cmap='viridis',
+                         vmin=ORDER_VMIN, vmax=ORDER_VMAX, shading='gouraud')
         ax.set_aspect('equal')
         ax.set_title(r'$|\psi|$ at t={:.1f}'.format(t0), fontsize=11)
         ax.set_xlabel(r'$x/\xi$')
@@ -302,7 +309,8 @@ def plot_single_frame(args):
 
     if PLOT_EPSILON:
         ax = fig.add_subplot(gs[plot_idx // ncols, plot_idx % ncols])
-        tc = ax.tripcolor(x, y, triangles, epsilon_data, cmap='RdBu_r', shading='gouraud')
+        tc = ax.tripcolor(x, y, triangles, epsilon_data, cmap='RdBu_r',
+                         vmin=EPSILON_VMIN, vmax=EPSILON_VMAX, shading='gouraud')
         ax.set_aspect('equal')
         ax.set_title(r'Disorder $\epsilon$', fontsize=11)
         ax.set_xlabel(r'$x/\xi$')
@@ -312,23 +320,22 @@ def plot_single_frame(args):
 
     if PLOT_TEMPERATURE:
         ax = fig.add_subplot(gs[plot_idx // ncols, plot_idx % ncols])
-        if temperature is not None:
-            tc = ax.tripcolor(x, y, triangles, temperature, cmap='hot', shading='gouraud')
-            ax.set_aspect('equal')
-            ax.set_title(f'Temperature at t={t0:.1f}', fontsize=11)
-            ax.set_xlabel(r'$x/\xi$')
-            ax.set_ylabel(r'$y/\xi$')
-            plt.colorbar(tc, ax=ax, label='T')
-        else:
-            ax.text(0.5, 0.5, 'Temperature\nNot Available',
-                   ha='center', va='center', transform=ax.transAxes)
+        # Calculate temperature as 1 - epsilon
+        temperature = 1.0 - epsilon_data
+        tc = ax.tripcolor(x, y, triangles, temperature, cmap='hot',
+                         vmin=TEMPERATURE_VMIN, vmax=TEMPERATURE_VMAX, shading='gouraud')
+        ax.set_aspect('equal')
+        ax.set_title(f'Temperature at t={t0:.1f}', fontsize=11)
+        ax.set_xlabel(r'$x/\xi$')
+        ax.set_ylabel(r'$y/\xi$')
+        plt.colorbar(tc, ax=ax, label='T')
         plot_idx += 1
 
     if PLOT_PHASE:
         ax = fig.add_subplot(gs[plot_idx // ncols, plot_idx % ncols])
         phase = np.angle(psi)
         tc = ax.tripcolor(x, y, triangles, phase, cmap='twilight',
-                         vmin=-np.pi, vmax=np.pi, shading='gouraud')
+                         vmin=PHASE_VMIN, vmax=PHASE_VMAX, shading='gouraud')
         ax.set_aspect('equal')
         ax.set_title(r'Phase at t={:.1f}'.format(t0), fontsize=11)
         ax.set_xlabel(r'$x/\xi$')
