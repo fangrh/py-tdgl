@@ -294,20 +294,18 @@ def plot_single_frame(args):
     # 计算子图数量
     plots_enabled = [PLOT_ORDER, PLOT_EPSILON, PLOT_TEMPERATURE, PLOT_PHASE, PLOT_DPSI_DT]
     num_field_plots = sum(plots_enabled)
-    ncols = 3
-    field_nrows = (num_field_plots + ncols - 1) // ncols  # 场图的行数
 
     # 创建图形 - 使用GridSpec分为上下两部分
+    # 上方：一行热图，下方：I-V曲线
     fig = plt.figure(figsize=FIGSIZE)
-    # 上方是场图网格，下方是I-V曲线（占整个宽度）
-    gs = fig.add_gridspec(field_nrows + 1, ncols, hspace=0.4, wspace=0.3,
-                          height_ratios=[1] * field_nrows + [0.8])
+    gs = fig.add_gridspec(2, num_field_plots, hspace=0.3, wspace=0.3,
+                          height_ratios=[1, 0.6])
 
     plot_idx = 0
 
-    # 绘制场分布
+    # 绘制场分布（所有图在第一行）
     if PLOT_ORDER:
-        ax = fig.add_subplot(gs[plot_idx // ncols, plot_idx % ncols])
+        ax = fig.add_subplot(gs[0, plot_idx])
         tc = ax.tripcolor(x, y, triangles, np.abs(psi), cmap='viridis',
                          vmin=ORDER_VMIN, vmax=ORDER_VMAX, shading='gouraud')
         ax.set_aspect('equal')
@@ -318,7 +316,7 @@ def plot_single_frame(args):
         plot_idx += 1
 
     if PLOT_EPSILON:
-        ax = fig.add_subplot(gs[plot_idx // ncols, plot_idx % ncols])
+        ax = fig.add_subplot(gs[0, plot_idx])
         tc = ax.tripcolor(x, y, triangles, epsilon_current, cmap='RdBu_r',
                          vmin=EPSILON_VMIN, vmax=EPSILON_VMAX, shading='gouraud')
         ax.set_aspect('equal')
@@ -329,7 +327,7 @@ def plot_single_frame(args):
         plot_idx += 1
 
     if PLOT_TEMPERATURE:
-        ax = fig.add_subplot(gs[plot_idx // ncols, plot_idx % ncols])
+        ax = fig.add_subplot(gs[0, plot_idx])
         tc = ax.tripcolor(x, y, triangles, temperature_current, cmap='hot',
                          vmin=TEMPERATURE_VMIN, vmax=TEMPERATURE_VMAX, shading='gouraud')
         ax.set_aspect('equal')
@@ -340,7 +338,7 @@ def plot_single_frame(args):
         plot_idx += 1
 
     if PLOT_PHASE:
-        ax = fig.add_subplot(gs[plot_idx // ncols, plot_idx % ncols])
+        ax = fig.add_subplot(gs[0, plot_idx])
         phase = np.angle(psi)
         tc = ax.tripcolor(x, y, triangles, phase, cmap='twilight',
                          vmin=PHASE_VMIN, vmax=PHASE_VMAX, shading='gouraud')
@@ -352,7 +350,7 @@ def plot_single_frame(args):
         plot_idx += 1
 
     if PLOT_DPSI_DT:
-        ax = fig.add_subplot(gs[plot_idx // ncols, plot_idx % ncols])
+        ax = fig.add_subplot(gs[0, plot_idx])
         dpsi_dt_magnitude = calculate_dpsi_dt(hdf_file, t0, available_steps, time_data)
         if dpsi_dt_magnitude is not None and dpsi_dt_magnitude.max() > 0:
             vmax = np.percentile(dpsi_dt_magnitude, 99)
@@ -369,8 +367,8 @@ def plot_single_frame(args):
         plot_idx += 1
 
     # I-V 曲线 - 底部横跨整个宽度
-    # 创建一个横跨所有列的子图
-    ax_iv = fig.add_subplot(gs[field_nrows, :])
+    # 创建一个横跨所有列的子图（第二行）
+    ax_iv = fig.add_subplot(gs[1, :])
 
     # 绘制I-V曲线（横轴：电流，纵轴：电压）
     ax_iv.plot(currents_uA, voltage_diff_uV, 'k-', linewidth=2, alpha=0.7, label='I-V Curve')
