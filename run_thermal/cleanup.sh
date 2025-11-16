@@ -23,7 +23,8 @@ echo "  - $npz_count .npz files"
 
 # Find .h5 files with corresponding .h5.tmp files (incomplete/corrupted)
 h5_with_tmp=()
-for tmp_file in *.h5.tmp 2>/dev/null; do
+shopt -s nullglob  # Make glob expand to nothing if no matches
+for tmp_file in *.h5.tmp; do
     if [ -f "$tmp_file" ]; then
         h5_file="${tmp_file%.tmp}"
         if [ -f "$h5_file" ]; then
@@ -31,6 +32,7 @@ for tmp_file in *.h5.tmp 2>/dev/null; do
         fi
     fi
 done
+shopt -u nullglob  # Reset to default behavior
 
 echo "  - ${#h5_with_tmp[@]} .h5 files with .h5.tmp (incomplete)"
 
