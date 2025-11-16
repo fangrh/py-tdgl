@@ -21,7 +21,7 @@ import re
 #%% ========== 参数设置 ==========
 # 时间范围
 TIME_START = 0
-TIME_END = 8000
+# TIME_END 将自动从HDF5文件检测 (默认10000，即ramp_up_time=5000 + ramp_down_time=5000)
 # TIME_STEP = 10 (视频帧采样间隔，在主函数中设置)
 
 # 输出设置
@@ -91,6 +91,75 @@ def detect_save_every_from_filename(filename):
     else:
         print(f"文件名中未找到 save_every 参数，使用默认值: 1000")
         return 1000
+
+def detect_time_parameters_from_hdf5(hdf_file):
+    """
+    从HDF5文件中检测时间参数（ramp_up_time, ramp_down_time等）
+
+    Returns:
+        dict: 包含检测到的时间参数，以及自动计算的TIME_END
+    """
+    import tdgl
+
+    # 默认值
+    params = {
+        'ramp_up_time': 5000.0,
+        'max_current_time': 0.0,
+        'ramp_down_time': 5000.0,
+        'zero_current_time': 0.0,
+        'TIME_END': 10000.0,  # 默认值 (5000 + 0 + 5000 + 0)
+        'auto_detected': False
+    }
+
+    try:
+        solution = tdgl.Solution.from_hdf5(hdf_file)
+
+        # 尝试从solution.options中获取solve_time
+        if hasattr(solution, 'options') and hasattr(solution.options, 'solve_time'):
+            solve_time = solution.options.solve_time
+            params['TIME_END'] = solve_time
+            print(f"从HDF5检测到 solve_time: {solve_time}")
+            params['auto_detected'] = True
+
+        # 如果无法从options获取，使用实际时间数据的最大值
+        if not params['auto_detected']:
+            time_data = solution.dynamics.time
+            params['TIME_END'] = time_data.max()
+            print(f"从HDF5数据检测到最大时间: {params['TIME_END']:.1f}")
+            params['auto_detected'] = True
+
+        # 尝试从文件名中检测各个时间参数
+        filename = os.path.basename(hdf_file)
+
+        # 检测 ramp_up_time
+        match = re.search(r'ramp_up_time_([\d.]+)', filename)
+        if match:
+            params['ramp_up_time'] = float(match.group(1))
+            print(f"从文件名检测到 ramp_up_time: {params['ramp_up_time']}")
+
+        # 检测 max_current_time
+        match = re.search(r'max_current_time_([\d.]+)', filename)
+        if match:
+            params['max_current_time'] = float(match.group(1))
+            print(f"从文件名检测到 max_current_time: {params['max_current_time']}")
+
+        # 检测 ramp_down_time
+        match = re.search(r'ramp_down_time_([\d.]+)', filename)
+        if match:
+            params['ramp_down_time'] = float(match.group(1))
+            print(f"从文件名检测到 ramp_down_time: {params['ramp_down_time']}")
+
+        # 检测 zero_current_time
+        match = re.search(r'zero_current_time_([\d.]+)', filename)
+        if match:
+            params['zero_current_time'] = float(match.group(1))
+            print(f"从文件名检测到 zero_current_time: {params['zero_current_time']}")
+
+    except Exception as e:
+        print(f"警告: 无法从HDF5文件检测时间参数: {e}")
+        print(f"使用默认值: TIME_END = {params['TIME_END']}")
+
+    return params
 
 #%% ========== 加载数据函数 ==========
 def load_all_data(hdf_file):
@@ -402,6 +471,10 @@ def plot_single_frame(args):
 if __name__ == "__main__":
     # 获取当前任务要处理的.h5文件
     HDF_FILE = get_current_h5_file()
+
+    # 从HDF5文件自动检测时间参数
+    time_params = detect_time_parameters_from_hdf5(HDF_FILE)
+    TIME_END = time_params['TIME_END']
 
     # TIME_STEP 默认为 10（视频帧采样间隔）
     TIME_STEP = 10
