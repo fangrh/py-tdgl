@@ -498,6 +498,17 @@ if __name__ == "__main__":
     print(f"FPS: {FPS}, DPI: {DPI}")
     print(f"使用 {NUM_WORKERS} 个CPU核心进行并行处理")
 
+    # 首先处理 noise_strength 参数 - 永久删除以避免兼容性问题
+    temp_hdf_file = None
+    with h5py.File(HDF_FILE, 'r') as f:
+        has_noise_strength = 'noise_strength' in f['solution/options'].attrs
+
+    if has_noise_strength:
+        print(f"\n检测到不兼容的 noise_strength 参数，将从文件中删除...")
+        with h5py.File(HDF_FILE, 'r+') as f:
+            del f['solution/options'].attrs['noise_strength']
+        print(f"[OK] 已删除 noise_strength 参数\n")
+
     # 加载所有数据
     data_dict = load_all_data(HDF_FILE)
 
