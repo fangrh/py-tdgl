@@ -723,15 +723,17 @@ class TDGLSolver:
     
     def _calculate_total_power_density(self, dA_dt, previous_psi, psi, abs_sq_psi, old_sq_psi, normal_current, dt):
         """Calculate total power density W_total according to the formula:
-        W_total = 2(∂A/∂t)^2 + (2u/sqrt(1+γ^2|ψ|^2))(|∂ψ/∂t|^2) + (γ^2/4)(∂|ψ|^2/∂t)^2
-        
+        W_total = 2(∂A/∂t)^2 + (2u/sqrt(1+γ^2|ψ|^2))(|∂ψ/∂t|^2 + (γ^2/4)(∂|ψ|^2/∂t)^2) + |J_n|^2
+
+        Note: Both term2 and term3 are multiplied by the same factor (2u/sqrt(1+γ^2|ψ|^2))
+
         Parameters
         ----------
         dA_dt : array_like
             Time derivative of vector potential
         previous_psi : array_like
             Previous order parameter
-        psi : array_like 
+        psi : array_like
             Order parameter
         abs_sq_psi : array_like
             Absolute square of order parameter
@@ -739,7 +741,7 @@ class TDGLSolver:
             Previous absolute square of order parameter
         dt : float
             Time step
-        
+
         Returns
         -------
         array_like
@@ -772,7 +774,7 @@ class TDGLSolver:
 
         # Term 3: (γ^2/4)(∂|ψ|^2/∂t)^2
         d_abspsisq_dt = (abs_sq_psi - old_sq_psi) / dt
-        term3 = (self.gamma**2 / 4) * d_abspsisq_dt**2
+        term3 = (2 * self.u / xp.sqrt(1 + self.gamma**2 * abs_sq_psi)) * (self.gamma**2 / 4) * d_abspsisq_dt**2
 
         # Term 4: |J_n|^2 (normal current contribution)
         # Note: At boundary points (except electrodes), this calculation may be unreliable
