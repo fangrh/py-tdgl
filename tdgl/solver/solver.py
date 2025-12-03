@@ -781,7 +781,7 @@ class TDGLSolver:
         # due to fewer neighboring edges. We suppress heating at non-electrode boundaries.
         directions = self.device.mesh.get_quantity_on_site(normal_current, use_cupy=(xp != np))
         norm = xp.linalg.norm(directions, axis=1)
-        term4 = norm * norm
+        term4 = 2*norm * norm
 
         # Suppress heat source terms at boundary points to avoid numerical artifacts
         # Behavior depends on layer.suppress_electrode_edge_heating:
