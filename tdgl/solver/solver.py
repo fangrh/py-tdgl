@@ -701,7 +701,7 @@ class TDGLSolver:
             del A_induced_vals[:-2]
         return A_induced, screening_error
     
-    def _calculate_total_power_density(self, dA_dt, previous_psi, psi, abs_sq_psi, old_sq_psi, normal_current, dt):
+    def _calculate_total_power_density(self, dA_dt, previous_psi, psi, abs_sq_psi, old_sq_psi, normal_current, dt, mu):
         """Calculate total power density W_total according to the formula:
         W_total = 2(∂A/∂t)^2 + (2u/sqrt(1+γ^2|ψ|^2))(|∂ψ/∂t|^2) + (γ^2/4)(∂|ψ|^2/∂t)^2
         
@@ -717,8 +717,12 @@ class TDGLSolver:
             Absolute square of order parameter
         old_sq_psi : array_like
             Previous absolute square of order parameter
+        normal_current : array_like
+            Normal current density
         dt : float
             Time step
+        mu : array_like
+            Scalar potential (electric potential/voltage)
         
         Returns
         -------
@@ -747,12 +751,22 @@ class TDGLSolver:
         # Calculate ∂ψ/∂t using current and previous psi values
         dpsi_dt = (psi - previous_psi) / dt
 
-        # Term 2: (2u/sqrt(1+γ^2|ψ|^2))(|∂ψ/∂t|^2)
-        term2 = (2 * self.u / xp.sqrt(1 + self.gamma**2 * abs_sq_psi)) * xp.abs(dpsi_dt)**2
+        # Ensure mu uses the same array library as psi
+        if xp == np:
+            mu_array = np.asarray(mu)
+        else:
+            mu_array = cupy.asarray(mu)
+
+        # Term 2: (2u/sqrt(1+γ^2|ψ|^2))(|∂ψ/∂t + iμψ|^2) + voltage modulation term
+        # The voltage modulation term accounts for the effect of electric potential on the order parameter dynamics
+        term2_base = (2 * self.u / xp.sqrt(1 + self.gamma**2 * abs_sq_psi)) * xp.abs(dpsi_dt + 1j * mu_array * psi)**2
+        # Voltage modulation term: additional contribution from voltage gradient effects
+        voltage_modulation = 2 * self.u * mu_array * mu_array * abs_sq_psi / xp.sqrt(1 + self.gamma**2 * abs_sq_psi)
+        term2 = term2_base + voltage_modulation
 
         # Term 3: (γ^2/4)(∂|ψ|^2/∂t)^2
         d_abspsisq_dt = (abs_sq_psi - old_sq_psi) / dt
-        term3 = (self.gamma**2 / 4) * d_abspsisq_dt**2
+        term3 = (2 * self.u / xp.sqrt(1 + self.gamma**2 * abs_sq_psi)) * (self.gamma**2 / 4) * d_abspsisq_dt**2
 
         # Term 4: |J_n|^2 (normal current contribution)
         # Note: At boundary points (except electrodes), this calculation may be unreliable
@@ -964,7 +978,7 @@ class TDGLSolver:
             mu, supercurrent, normal_current = self.solve_for_observables(psi, dA_dt)
             self.normal_current = normal_current
             # Calculate total power density
-            self.W_total = self._calculate_total_power_density(dA_dt, previous_psi, psi, abs_sq_psi, old_sq_psi, normal_current, dt)
+            self.W_total = self._calculate_total_power_density(dA_dt, previous_psi, psi, abs_sq_psi, old_sq_psi, normal_current, dt, mu)
             
             if options.include_screening:
                 # Evaluate the induced vector potential
