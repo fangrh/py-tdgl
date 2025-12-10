@@ -351,6 +351,9 @@ class TDGLSolver:
     def update_mu_boundary(self, time: float) -> None:
         """Computes the terminal current density for a given time step and
         updates the scalar potential boundary conditions accordingly.
+        
+        Uses a smooth boundary transition based on COMSOL's flc2hs function
+        to avoid sharp current density discontinuities at electrode edges.
 
         Args:
             time: The current value of the dimensionless time.
@@ -359,6 +362,13 @@ class TDGLSolver:
         # and update the current boundary conditions.
         currents = self.current_func(time)
         terminal_current_densities = self.terminal_current_densities
+        
+        # Get boundary edge positions (in physical units)
+        mesh = self.device.mesh
+        xi = self.device.coherence_length.magnitude
+        boundary_edge_indices = mesh.edge_mesh.boundary_edge_indices
+        boundary_edge_positions = xi * mesh.edge_mesh.centers[boundary_edge_indices]
+        
         for terminal in self.terminal_info:
             current_density = (-1 / terminal.length) * sum(
                 currents.get(name, 0)
@@ -368,7 +378,184 @@ class TDGLSolver:
             # Only update mu_boundary if the terminal current has changed
             if current_density != terminal_current_densities[terminal.name]:
                 terminal_current_densities[terminal.name] = current_density
-                self.mu_boundary[terminal.boundary_edge_indices] = current_density
+                
+                # Get the terminal polygon for distance calculations
+                terminal_polygon = None
+                for term in self.device.terminals:
+                    if term.name == terminal.name:
+                        terminal_polygon = term.polygon
+                        break
+                
+                if terminal_polygon is not None:
+                    # Get boundary edge positions and indices for this terminal
+                    terminal_boundary_indices = terminal.boundary_edge_indices
+                    terminal_edge_positions = boundary_edge_positions[terminal_boundary_indices]
+                    
+                    # Get the actual boundary edge indices (into the full edge mesh)
+                    mesh = self.device.mesh
+                    boundary_edge_indices_all = mesh.edge_mesh.boundary_edge_indices
+                    terminal_boundary_edges_global = boundary_edge_indices_all[terminal_boundary_indices]
+                    
+                    # Get edge connectivity to group edges into continuous segments
+                    all_edges = mesh.edge_mesh.edges
+                    terminal_edges = all_edges[terminal_boundary_edges_global]
+                    
+                    # Group boundary edges into continuous segments
+                    # Each segment is a connected sequence of edges along the boundary
+                    segments = self._group_edges_into_segments(
+                        terminal_edges, terminal_boundary_indices, terminal_edge_positions
+                    )
+                    
+                    # Process each segment separately
+                    smooth_current_densities = np.zeros(len(terminal_boundary_indices))
+                    
+                    for segment_indices, segment_edges, segment_positions in segments:
+                        # Find endpoints of this segment
+                        # Endpoints are where the segment starts/ends (first and last edge centers)
+                        if len(segment_positions) > 1:
+                            # Segment endpoints are the first and last edge centers
+                            segment_start = segment_positions[0]
+                            segment_end = segment_positions[-1]
+                            
+                            # Calculate distance along segment from each edge to nearest endpoint
+                            # Use cumulative edge lengths for accurate distance along boundary
+                            edge_centers_all = xi * mesh.edge_mesh.centers
+                            # segment_indices are indices into terminal_boundary_indices
+                            # Get the global boundary edge indices for this segment
+                            segment_global_indices = terminal_boundary_edges_global[segment_indices]
+                            segment_edge_centers = edge_centers_all[segment_global_indices]
+                            edge_lengths = mesh.edge_mesh.edge_lengths[segment_global_indices] * xi
+                            
+                            # Cumulative distance along segment from start
+                            cumulative_dist = np.concatenate([[0], np.cumsum(edge_lengths)])
+                            total_length = cumulative_dist[-1]
+                            
+                            # Smooth transition width is 1/10 of the segment length
+                            transition_width = total_length * 0.1
+                            
+                            # Distance from each edge to nearest endpoint (along segment)
+                            distances = np.minimum(
+                                cumulative_dist,  # Distance from start
+                                total_length - cumulative_dist  # Distance from end
+                            )
+                            
+                            # Apply flc2hs-like smooth transition at segment endpoints
+                            # flc2hs(x, w) ≈ 0.5 * (1 + tanh(x / w)) for smooth Heaviside
+                            # At endpoints (distance ≈ 0): smooth_factor ≈ 0 (no current)
+                            # Away from endpoints (distance >> transition_width): smooth_factor ≈ 1 (full current)
+                            x_normalized = (distances - transition_width) / transition_width
+                            smooth_factor = 0.5 * (1 + np.tanh(x_normalized))
+                            
+                            # Map back to original terminal_boundary_indices
+                            for i, orig_idx in enumerate(segment_indices):
+                                smooth_current_densities[orig_idx] = current_density * smooth_factor[i]
+                        else:
+                            # Single edge segment: apply full current (or minimal smoothing)
+                            smooth_current_densities[segment_indices[0]] = current_density
+                    
+                    # Apply smooth current density
+                    self.mu_boundary[terminal_boundary_indices] = smooth_current_densities
+                else:
+                    # Fallback to constant current density if polygon not found
+                    self.mu_boundary[terminal.boundary_edge_indices] = current_density
+
+    def _group_edges_into_segments(
+        self, edges: np.ndarray, indices: np.ndarray, positions: np.ndarray
+    ) -> List[Tuple[np.ndarray, np.ndarray, np.ndarray]]:
+        """Group boundary edges into continuous segments.
+        
+        A segment is a connected sequence of edges where each edge shares a vertex
+        with the next edge. Segments may be separated by gaps (discontinuous).
+        
+        Args:
+            edges: Array of shape (n, 2) with vertex indices for each edge
+            indices: Original indices into terminal_boundary_indices
+            positions: Edge center positions
+            
+        Returns:
+            List of tuples (segment_indices, segment_edges, segment_positions)
+            for each continuous segment
+        """
+        if len(edges) == 0:
+            return []
+        
+        # Build adjacency: for each edge, find edges that share a vertex
+        n_edges = len(edges)
+        visited = np.zeros(n_edges, dtype=bool)
+        segments = []
+        
+        for start_idx in range(n_edges):
+            if visited[start_idx]:
+                continue
+            
+            # Start a new segment
+            segment_indices = [start_idx]
+            segment_edges = [edges[start_idx]]
+            visited[start_idx] = True
+            
+            # Try to extend segment forward
+            current_edge = edges[start_idx]
+            current_idx = start_idx
+            
+            # Forward direction: find edges connected to the second vertex
+            while True:
+                next_vertex = current_edge[1]
+                found_next = False
+                
+                for i in range(n_edges):
+                    if not visited[i] and (edges[i][0] == next_vertex or edges[i][1] == next_vertex):
+                        # Found connected edge
+                        segment_indices.append(i)
+                        # Ensure edge is oriented consistently
+                        if edges[i][0] == next_vertex:
+                            segment_edges.append(edges[i])
+                        else:
+                            # Reverse edge orientation
+                            segment_edges.append(edges[i][::-1])
+                        visited[i] = True
+                        current_edge = segment_edges[-1]
+                        current_idx = i
+                        found_next = True
+                        break
+                
+                if not found_next:
+                    break
+            
+            # Backward direction: find edges connected to the first vertex
+            current_edge = edges[start_idx]
+            current_idx = start_idx
+            
+            while True:
+                prev_vertex = current_edge[0]
+                found_prev = False
+                
+                for i in range(n_edges):
+                    if not visited[i] and (edges[i][0] == prev_vertex or edges[i][1] == prev_vertex):
+                        # Found connected edge
+                        segment_indices.insert(0, i)
+                        # Ensure edge is oriented consistently
+                        if edges[i][1] == prev_vertex:
+                            segment_edges.insert(0, edges[i])
+                        else:
+                            # Reverse edge orientation
+                            segment_edges.insert(0, edges[i][::-1])
+                        visited[i] = True
+                        current_edge = segment_edges[0]
+                        current_idx = i
+                        found_prev = True
+                        break
+                
+                if not found_prev:
+                    break
+            
+            # Convert to arrays
+            segment_indices_arr = np.array(segment_indices)
+            segment_edges_arr = np.array(segment_edges)
+            segment_positions_arr = positions[segment_indices_arr]
+            
+            segments.append((segment_indices_arr, segment_edges_arr, segment_positions_arr))
+        
+        return segments
 
     def update_applied_vector_potential(self, time: float) -> np.ndarray:
         """Evaluates the time-dependent vector potential.
