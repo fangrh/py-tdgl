@@ -10,7 +10,7 @@ Time-dependent Ginzburg-Landau in Python
 [![codecov](https://codecov.io/gh/loganbvh/py-tdgl/branch/main/graph/badge.svg?token=VXdxJKP6Ag)](https://codecov.io/gh/loganbvh/py-tdgl)
 ![GitHub](https://img.shields.io/github/license/loganbvh/py-tdgl)
 [![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
-[![DOI](https://zenodo.org/badge/535746543.svg)](https://zenodo.org/badge/latestdoi/535746543)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.7613568.svg)](https://doi.org/10.5281/zenodo.7613568)
 
 
 
@@ -29,7 +29,7 @@ Click the badge below to try `pyTDGL` interactively online via [Google Colab](ht
 
 ## Install `pyTDGL`
 
-`pyTDGL` requires `python` `3.8`, `3.9`, `3.10`, `3.11`, `3.12`, or `3.13`. We recommend installing `pyTDGL` in a [`conda` environment](https://conda.io/projects/conda/en/latest/user-guide/tasks/manage-environments.html), e.g.
+`pyTDGL` requires `python` `3.8`, `3.9`, `3.10`, `3.11`, `3.12`, `3.13`, or `3.14`. We recommend installing `pyTDGL` in a [`conda` environment](https://conda.io/projects/conda/en/latest/user-guide/tasks/manage-environments.html), e.g.
 
 ```bash
 conda create --name tdgl python="3.12"
